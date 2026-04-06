@@ -453,86 +453,37 @@ static void hydra_status_print_migration(struct seq_file *m,
 					 int nr_online, int *online_nodes)
 {
 	long matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
-	long row_sum[NUMA_NODE_COUNT];
 	long matrix_total = 0;
 	int i, j;
-	int cols;
 
 	for (i = 0; i < NUMA_NODE_COUNT; i++) {
-		row_sum[i] = 0;
 		for (j = 0; j < NUMA_NODE_COUNT; j++) {
 			matrix[i][j] = atomic_long_read(
 				&mm->hydra_migration_matrix[i][j]);
 			matrix_total += matrix[i][j];
-			row_sum[i] += matrix[i][j];
 		}
 	}
 
 	if (matrix_total == 0)
 		return;
 
-	cols = nr_online;
-	if (cols > 4) {
-		seq_printf(m, "    Migration (%ld pages migrated)\n", matrix_total);
-		seq_printf(m, "    %4s %10s  Top destinations\n",
-			   "From", "Total");
-		seq_printf(m, "    ---- ----------  "
-			   "-----------------------------\n");
+	seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
+	seq_printf(m, "    %4s", "s\\d");
+	for (i = 0; i < nr_online; i++)
+		seq_printf(m, " %8d", online_nodes[i]);
+	seq_printf(m, "\n");
 
-		for (i = 0; i < nr_online; i++) {
-			int src = online_nodes[i];
-			int best[3] = {-1, -1, -1};
-			long best_v[3] = {0, 0, 0};
+	seq_printf(m, "    ----");
+	for (i = 0; i < nr_online; i++)
+		seq_printf(m, " --------");
+	seq_printf(m, "\n");
 
-			if (row_sum[src] == 0)
-				continue;
-
-			for (j = 0; j < nr_online; j++) {
-				int dst = online_nodes[j];
-				long v = matrix[src][dst];
-				if (v <= 0)
-					continue;
-				if (v > best_v[0]) {
-					best_v[2] = best_v[1]; best[2] = best[1];
-					best_v[1] = best_v[0]; best[1] = best[0];
-					best_v[0] = v; best[0] = dst;
-				} else if (v > best_v[1]) {
-					best_v[2] = best_v[1]; best[2] = best[1];
-					best_v[1] = v; best[1] = dst;
-				} else if (v > best_v[2]) {
-					best_v[2] = v; best[2] = dst;
-				}
-			}
-
-			seq_printf(m, "    %4d %10ld  ", src, row_sum[src]);
-			for (j = 0; j < 3; j++) {
-				if (best[j] < 0)
-					break;
-				if (j > 0)
-					seq_printf(m, ", ");
-				seq_printf(m, "n%d:%ld", best[j], best_v[j]);
-			}
-			seq_printf(m, "\n");
-		}
-	} else {
-		seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
-		seq_printf(m, "    %4s", "s\\d");
-		for (i = 0; i < cols; i++)
-			seq_printf(m, " %8d", online_nodes[i]);
+	for (i = 0; i < nr_online; i++) {
+		int src = online_nodes[i];
+		seq_printf(m, "    %4d", src);
+		for (j = 0; j < nr_online; j++)
+			seq_printf(m, " %8ld", matrix[src][online_nodes[j]]);
 		seq_printf(m, "\n");
-
-		seq_printf(m, "    ----");
-		for (i = 0; i < cols; i++)
-			seq_printf(m, " --------");
-		seq_printf(m, "\n");
-
-		for (i = 0; i < nr_online; i++) {
-			int src = online_nodes[i];
-			seq_printf(m, "    %4d", src);
-			for (j = 0; j < cols; j++)
-				seq_printf(m, " %8ld", matrix[src][online_nodes[j]]);
-			seq_printf(m, "\n");
-		}
 	}
 	seq_printf(m, "\n");
 }
@@ -1103,7 +1054,6 @@ static int hydra_history_show(struct seq_file *m, void *v)
 	struct hydra_history_entry *e;
 	int i, j, nr_online = 0;
 	int online_nodes[NUMA_NODE_COUNT];
-	int entry_num = 0;
 
 	for (i = 0; i < NUMA_NODE_COUNT; i++) {
 		if (node_online(i))
@@ -1134,8 +1084,6 @@ static int hydra_history_show(struct seq_file *m, void *v)
 		long tlb_pct;
 		long avg_pte, avg_hpmd;
 		long matrix_total = 0;
-
-		entry_num++;
 
 		tlb_pct = (e->tlb_total > 0)
 			? (e->tlb_saved * 100) / e->tlb_total : 0;
@@ -1171,79 +1119,24 @@ static int hydra_history_show(struct seq_file *m, void *v)
 				matrix_total += e->migration_matrix[online_nodes[i]][online_nodes[j]];
 
 		if (matrix_total > 0) {
-			int cols = nr_online;
+			seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
+			seq_printf(m, "    %4s", "s\\d");
+			for (i = 0; i < nr_online; i++)
+				seq_printf(m, " %8d", online_nodes[i]);
+			seq_printf(m, "\n");
 
-			if (cols > 4) {
-				long row_sum[NUMA_NODE_COUNT] = {};
+			seq_printf(m, "    ----");
+			for (i = 0; i < nr_online; i++)
+				seq_printf(m, " --------");
+			seq_printf(m, "\n");
 
-				for (i = 0; i < nr_online; i++)
-					for (j = 0; j < nr_online; j++)
-						row_sum[online_nodes[i]] +=
-							e->migration_matrix[online_nodes[i]][online_nodes[j]];
-
-				seq_printf(m, "    Migration (%ld pages migrated)\n",
-					   matrix_total);
-				seq_printf(m, "    %4s %10s  Top destinations\n",
-					   "From", "Total");
-				seq_printf(m, "    ---- ----------  "
-					   "-----------------------------\n");
-
-				for (i = 0; i < nr_online; i++) {
-					int src = online_nodes[i];
-					int best[3] = {-1, -1, -1};
-					long best_v[3] = {0, 0, 0};
-
-					if (row_sum[src] == 0)
-						continue;
-
-					for (j = 0; j < nr_online; j++) {
-						int dst = online_nodes[j];
-						long val = e->migration_matrix[src][dst];
-						if (val <= 0)
-							continue;
-						if (val > best_v[0]) {
-							best_v[2] = best_v[1]; best[2] = best[1];
-							best_v[1] = best_v[0]; best[1] = best[0];
-							best_v[0] = val; best[0] = dst;
-						} else if (val > best_v[1]) {
-							best_v[2] = best_v[1]; best[2] = best[1];
-							best_v[1] = val; best[1] = dst;
-						} else if (val > best_v[2]) {
-							best_v[2] = val; best[2] = dst;
-						}
-					}
-
-					seq_printf(m, "    %4d %10ld  ", src, row_sum[src]);
-					for (j = 0; j < 3; j++) {
-						if (best[j] < 0)
-							break;
-						if (j > 0)
-							seq_printf(m, ", ");
-						seq_printf(m, "n%d:%ld", best[j], best_v[j]);
-					}
-					seq_printf(m, "\n");
-				}
-			} else {
-				seq_printf(m, "    Migration Matrix (%ld pages)\n",
-					   matrix_total);
-				seq_printf(m, "    %4s", "s\\d");
-				for (i = 0; i < cols; i++)
-					seq_printf(m, " %8d", online_nodes[i]);
+			for (i = 0; i < nr_online; i++) {
+				int src = online_nodes[i];
+				seq_printf(m, "    %4d", src);
+				for (j = 0; j < nr_online; j++)
+					seq_printf(m, " %8ld",
+						   e->migration_matrix[src][online_nodes[j]]);
 				seq_printf(m, "\n");
-
-				seq_printf(m, "    ----");
-				for (i = 0; i < cols; i++)
-					seq_printf(m, " --------");
-				seq_printf(m, "\n");
-
-				for (i = 0; i < nr_online; i++) {
-					int src = online_nodes[i];
-					seq_printf(m, "    %4d", src);
-					for (j = 0; j < cols; j++)
-						seq_printf(m, " %8ld",
-							   e->migration_matrix[src][online_nodes[j]]);
-					seq_printf(m, "\n");
-				}
 			}
 			seq_printf(m, "\n");
 		}
