@@ -1346,13 +1346,17 @@ void ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 	struct page *start_pte_page;
 	struct page *cur;
 	long offset;
+	pte_t old_pte, new_pte;
 
-	start_pte_page = virt_to_page(ptep);
-
-	clear_bit(_PAGE_BIT_RW, (unsigned long *)&ptep->pte);
+	old_pte = READ_ONCE(*ptep);
+	do {
+		new_pte = pte_wrprotect(old_pte);
+	} while (!try_cmpxchg((long *)&ptep->pte, (long *)&old_pte, *(long *)&new_pte));
 
 	if (!mm || !mm->lazy_repl_enabled)
 		return;
+
+	start_pte_page = virt_to_page(ptep);
 
 	if (!READ_ONCE(start_pte_page->next_replica))
 		return;
@@ -1361,8 +1365,13 @@ void ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 
 	for_each_replica(start_pte_page, cur) {
 		pte_t *rp = (pte_t *)((long)page_to_virt(cur) + offset);
-		if (pte_present(*rp))
-			clear_bit(_PAGE_BIT_RW, (unsigned long *)&rp->pte);
+		if (pte_present(*rp)) {
+			pte_t old_rp, new_rp;
+			old_rp = READ_ONCE(*rp);
+			do {
+				new_rp = pte_wrprotect(old_rp);
+			} while (!try_cmpxchg((long *)&rp->pte, (long *)&old_rp, *(long *)&new_rp));
+		}
 	}
 }
 
@@ -1436,8 +1445,12 @@ void pmdp_set_wrprotect(struct mm_struct *mm,
 	struct page *pmd_page;
 	struct page *cur;
 	unsigned long offset;
+	pmd_t old_pmd, new_pmd;
 
-	clear_bit(_PAGE_BIT_RW, (unsigned long *)pmdp);
+	old_pmd = READ_ONCE(*pmdp);
+	do {
+		new_pmd = pmd_wrprotect(old_pmd);
+	} while (!try_cmpxchg((long *)pmdp, (long *)&old_pmd, *(long *)&new_pmd));
 
 	if (!virt_addr_valid(pmdp))
 		return;
@@ -1452,8 +1465,13 @@ void pmdp_set_wrprotect(struct mm_struct *mm,
 	for_each_replica(pmd_page, cur) {
 		pmd_t *replica_entry = (pmd_t *)(page_address(cur) + offset);
 
-		if (pmd_present(*replica_entry) && pmd_trans_huge(*replica_entry))
-			clear_bit(_PAGE_BIT_RW, (unsigned long *)replica_entry);
+		if (pmd_present(*replica_entry) && pmd_trans_huge(*replica_entry)) {
+			pmd_t old_repl, new_repl;
+			old_repl = READ_ONCE(*replica_entry);
+			do {
+				new_repl = pmd_wrprotect(old_repl);
+			} while (!try_cmpxchg((long *)replica_entry, (long *)&old_repl, *(long *)&new_repl));
+		}
 	}
 }
 
