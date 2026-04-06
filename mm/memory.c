@@ -7249,6 +7249,7 @@ retry_pud:
 			}
 
 			vmf.ptl = pmd_lock(mm, vmf.pmd);
+			vmf.orig_pmd = *vmf.pmd;
 			if (!huge_pmd_set_accessed(&vmf))
 				fix_spurious_fault(&vmf, PGTABLE_LEVEL_PMD);
 			spin_unlock(vmf.ptl);
@@ -7268,6 +7269,7 @@ retry_pud:
 				goto out_restore;
 		} else {
 			vmf.ptl = pmd_lock(mm, vmf.pmd);
+			vmf.orig_pmd = *vmf.pmd;
 			if (!huge_pmd_set_accessed(&vmf))
 				fix_spurious_fault(&vmf, PGTABLE_LEVEL_PMD);
 			spin_unlock(vmf.ptl);
