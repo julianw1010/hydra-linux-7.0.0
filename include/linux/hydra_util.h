@@ -370,10 +370,11 @@ static inline void hydra_drain_deferred_pages(struct mm_struct *mm)
 
 	while (page) {
 		int nid = page_to_nid(page);
+		bool from_cache = PageHydraFromCache(page);
 		next = page->next_replica;
 		page->next_replica = NULL;
 		ClearPageHydraFromCache(page);
-		if (!hydra_cache_push(page, nid, HYDRA_CACHE_PTE))
+		if (!from_cache || !hydra_cache_push(page, nid, HYDRA_CACHE_PTE))
 			__free_page(page);
 		page = next;
 	}
