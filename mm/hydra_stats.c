@@ -537,6 +537,17 @@ static void hydra_status_print_migration(struct seq_file *m,
 	seq_printf(m, "\n");
 }
 
+static void hydra_status_print_mm_counters(struct seq_file *m,
+					   struct mm_struct *mm)
+{
+	long pt_bytes = mm_pgtables_bytes(mm);
+
+	seq_printf(m, "    Page Table Memory\n");
+	seq_printf(m, "    %12s %12s\n", "Bytes", "KB");
+	seq_printf(m, "    ------------ ------------\n");
+	seq_printf(m, "    %12ld %12ld\n\n", pt_bytes, pt_bytes / 1024);
+}
+
 static int hydra_status_show(struct seq_file *m, void *v)
 {
 	struct task_struct *task;
@@ -576,6 +587,7 @@ static int hydra_status_show(struct seq_file *m, void *v)
 		hydra_status_print_repl_table(m, mm);
 		hydra_status_print_vma_dist(m, mm, nr_online, online_nodes);
 		hydra_status_print_migration(m, mm, nr_online, online_nodes);
+		hydra_status_print_mm_counters(m, mm);
 
 		rcu_read_lock();
 	}
