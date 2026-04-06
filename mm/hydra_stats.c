@@ -1768,7 +1768,6 @@ struct numa_check_stats {
 	unsigned long err_dirty_lost;
 	unsigned long err_write_excess;
 	unsigned long err_replica_protnone_loop;
-	unsigned long warn_accessed_asymmetry;
 };
 
 static void numa_check_pte_range(struct seq_file *m,
@@ -1876,9 +1875,6 @@ static void numa_check_pte_range(struct seq_file *m,
 
 		if (pte_dirty(m_val) && !pte_dirty(r_val))
 			stats->err_dirty_lost++;
-
-		if (pte_young(m_val) && !pte_young(r_val))
-			stats->warn_accessed_asymmetry++;
 	}
 }
 
@@ -1982,9 +1978,6 @@ static void numa_check_one_vma(struct seq_file *m,
 								   "replica(n%d) RW\n",
 								   addr, master_node, replica_node);
 						}
-
-						if (pmd_young(m_pmdval) && !pmd_young(r_pmdval))
-							stats->warn_accessed_asymmetry++;
 
 						if (pmd_dirty(m_pmdval) && !pmd_dirty(r_pmdval))
 							stats->err_dirty_lost++;
@@ -2112,7 +2105,6 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 				total.err_dirty_lost += per_pair.err_dirty_lost;
 				total.err_write_excess += per_pair.err_write_excess;
 				total.err_replica_protnone_loop += per_pair.err_replica_protnone_loop;
-				total.warn_accessed_asymmetry += per_pair.warn_accessed_asymmetry;
 			}
 		}
 	}
@@ -2146,9 +2138,6 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 	seq_printf(m, "ERR dirty_lost:               %lu  "
 		   "(master dirty, replica clean)\n",
 		   total.err_dirty_lost);
-	seq_printf(m, "WARN accessed_asymmetry:      %lu  "
-		   "(master accessed, replica not - may confuse balancer)\n",
-		   total.warn_accessed_asymmetry);
 
 	total_errors = total.err_protnone_stale +
 		       total.err_protnone_missing +
@@ -2161,9 +2150,6 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 		seq_printf(m, "\nRESULT: PASS");
 	else
 		seq_printf(m, "\nRESULT: FAIL (%d errors)", total_errors);
-
-	if (total.warn_accessed_asymmetry > 0)
-		seq_printf(m, " (%lu warnings)", total.warn_accessed_asymmetry);
 
 	seq_printf(m, "\n");
 
