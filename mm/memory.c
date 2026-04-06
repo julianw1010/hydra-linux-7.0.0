@@ -2437,7 +2437,6 @@ void zap_page_range_single(struct vm_area_struct *vma, unsigned long address,
 
 	tlb_gather_mmu(&tlb, vma->vm_mm);
 	tlb.vma = vma;
-	tlb.vma = vma;
 	zap_page_range_single_batched(&tlb, vma, address, size, details);
 	tlb_finish_mmu(&tlb);
 }
@@ -7208,7 +7207,10 @@ retry_pud:
 			goto out_restore;
 	}
 
-	vmf.orig_pmd = pmdp_get_lockless(vmf.pmd);
+	if (mm->lazy_repl_enabled)
+		vmf.orig_pmd = hydra_get_pmd(vmf.pmd);
+	else
+		vmf.orig_pmd = pmdp_get_lockless(vmf.pmd);
 
 	if (pmd_none(vmf.orig_pmd))
 		goto fallback;

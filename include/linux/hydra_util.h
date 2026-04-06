@@ -336,4 +336,47 @@ static inline void hydra_break_chain(struct page *page)
 	}
 }
 
+static inline void hydra_defer_pte_page_free(struct mm_struct *mm, struct page *page)
+{
+	unsigned long flags;
+
+	hydra_break_chain(page);
+	pagetable_dtor(page_ptdesc(page));
+
+	if (!mm) {
+		ClearPageHydraFromCache(page);
+		__free_page(page);
+		return;
+	}
+
+	spin_lock_irqsave(&mm->hydra_deferred_lock, flags);
+	page->next_replica = mm->hydra_deferred_pages;
+	mm->hydra_deferred_pages = page;
+	spin_unlock_irqrestore(&mm->hydra_deferred_lock, flags);
+}
+
+static inline void hydra_drain_deferred_pages(struct mm_struct *mm)
+{
+	struct page *page, *next;
+	unsigned long flags;
+
+	if (!READ_ONCE(mm->hydra_deferred_pages))
+		return;
+
+	spin_lock_irqsave(&mm->hydra_deferred_lock, flags);
+	page = mm->hydra_deferred_pages;
+	mm->hydra_deferred_pages = NULL;
+	spin_unlock_irqrestore(&mm->hydra_deferred_lock, flags);
+
+	while (page) {
+		int nid = page_to_nid(page);
+		next = page->next_replica;
+		page->next_replica = NULL;
+		ClearPageHydraFromCache(page);
+		if (!hydra_cache_push(page, nid, HYDRA_CACHE_PTE))
+			__free_page(page);
+		page = next;
+	}
+}
+
 #endif /* _LINUX_HYDRA_UTIL_H */

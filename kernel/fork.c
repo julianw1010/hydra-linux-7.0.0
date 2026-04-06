@@ -1098,6 +1098,8 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->locked_vm = 0;
 	atomic64_set(&mm->pinned_vm, 0);
 	mm->lazy_repl_enabled = false;
+	spin_lock_init(&mm->hydra_deferred_lock);
+	mm->hydra_deferred_pages = NULL;
 	atomic_long_set(&mm->hydra_tlb_shootdowns_sent, 0);
 	atomic_long_set(&mm->hydra_tlb_shootdowns_saved, 0);
 	atomic_long_set(&mm->hydra_tlb_shootdowns_total, 0);	

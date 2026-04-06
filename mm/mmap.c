@@ -1368,6 +1368,7 @@ void exit_mmap(struct mm_struct *mm)
 		hydra_record_exit(mm, current->comm, current->pid);
 		printk(KERN_INFO "HYDRA: Disabled page table replication for mm %px\n", mm);
 		hydra_unlink_all_replica_chains(mm);
+		hydra_drain_deferred_pages(mm);
 	}
 	mmap_read_unlock(mm);
 

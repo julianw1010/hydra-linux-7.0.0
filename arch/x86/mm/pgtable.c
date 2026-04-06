@@ -1156,26 +1156,12 @@ void pgtable_track_set_pmd(pmd_t *pmdp, pmd_t pmd)
 				pte_t *pte_base = (pte_t *)pmd_page_vaddr(old_repl);
 				struct page *pte_page = virt_to_page(pte_base);
 				struct mm_struct *mm = pte_page->pt_owner_mm;
-				int nid = page_to_nid(pte_page);
-				bool from_cache = PageHydraFromCache(pte_page);
 
 				native_set_pmd(replica_entry, __pmd(0));
 
-				hydra_break_chain(pte_page);
-				pagetable_dtor(page_ptdesc(pte_page));
-
 				if (mm)
 					mm_dec_nr_ptes(mm);
-
-				if (from_cache) {
-					ClearPageHydraFromCache(pte_page);
-					pte_page->next_replica = NULL;
-					if (hydra_cache_push(pte_page, nid, HYDRA_CACHE_PTE))
-						continue;
-				}
-
-				ClearPageHydraFromCache(pte_page);
-				__free_page(pte_page);
+				hydra_defer_pte_page_free(mm, pte_page);
 			} else {
 				native_set_pmd(replica_entry, __pmd(0));
 			}
@@ -1195,26 +1181,12 @@ void pgtable_track_set_pmd(pmd_t *pmdp, pmd_t pmd)
 				pte_t *pte_base = (pte_t *)pmd_page_vaddr(old_repl);
 				struct page *pte_page = virt_to_page(pte_base);
 				struct mm_struct *mm = pte_page->pt_owner_mm;
-				int nid = page_to_nid(pte_page);
-				bool from_cache = PageHydraFromCache(pte_page);
 
 				native_set_pmd(replica_entry, __pmd(0));
 
-				hydra_break_chain(pte_page);
-				pagetable_dtor(page_ptdesc(pte_page));
-
 				if (mm)
 					mm_dec_nr_ptes(mm);
-
-				if (from_cache) {
-					ClearPageHydraFromCache(pte_page);
-					pte_page->next_replica = NULL;
-					if (hydra_cache_push(pte_page, nid, HYDRA_CACHE_PTE))
-						continue;
-				}
-
-				ClearPageHydraFromCache(pte_page);
-				__free_page(pte_page);
+				hydra_defer_pte_page_free(mm, pte_page);
 			} else {
 				pmd_t new_repl = pmd_mkold(pmd);
 				native_set_pmd(replica_entry, new_repl);
@@ -1412,24 +1384,10 @@ pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm, unsigned long addr,
 			pte_t *pte_base = (pte_t *)pmd_page_vaddr(old_entry);
 			struct page *pte_page = virt_to_page(pte_base);
 			struct mm_struct *owner_mm = pte_page->pt_owner_mm;
-			int nid = page_to_nid(pte_page);
-			bool from_cache = PageHydraFromCache(pte_page);
-
-			hydra_break_chain(pte_page);
-			pagetable_dtor(page_ptdesc(pte_page));
 
 			if (owner_mm)
 				mm_dec_nr_ptes(owner_mm);
-
-			if (from_cache) {
-				ClearPageHydraFromCache(pte_page);
-				pte_page->next_replica = NULL;
-				if (hydra_cache_push(pte_page, nid, HYDRA_CACHE_PTE))
-					continue;
-			}
-
-			ClearPageHydraFromCache(pte_page);
-			__free_page(pte_page);
+			hydra_defer_pte_page_free(owner_mm, pte_page);
 		} else if (pmd_trans_huge(old_entry) || pmd_leaf(old_entry)) {
 			flags |= pmd_flags(old_entry);
 		}
@@ -1547,24 +1505,10 @@ pmd_t hydra_pmdp_establish(pmd_t *pmdp, pmd_t pmd)
 			pte_t *pte_base = (pte_t *)pmd_page_vaddr(old_repl);
 			struct page *pte_page = virt_to_page(pte_base);
 			struct mm_struct *mm = pte_page->pt_owner_mm;
-			int nid = page_to_nid(pte_page);
-			bool from_cache = PageHydraFromCache(pte_page);
-
-			hydra_break_chain(pte_page);
-			pagetable_dtor(page_ptdesc(pte_page));
 
 			if (mm)
 				mm_dec_nr_ptes(mm);
-
-			if (from_cache) {
-				ClearPageHydraFromCache(pte_page);
-				pte_page->next_replica = NULL;
-				if (hydra_cache_push(pte_page, nid, HYDRA_CACHE_PTE))
-					continue;
-			}
-
-			ClearPageHydraFromCache(pte_page);
-			__free_page(pte_page);
+			hydra_defer_pte_page_free(mm, pte_page);
 		} else if (pmd_trans_huge(old_repl) || pmd_leaf(old_repl)) {
 			flags |= pmd_flags(old_repl);
 		}
