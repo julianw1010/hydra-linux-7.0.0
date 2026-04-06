@@ -287,45 +287,54 @@ static const struct proc_ops hydra_cache_ops = {
 	.proc_release = single_release,
 };
 
-static int hydra_status_show(struct seq_file *m, void *v)
+static void hydra_status_print_header(struct seq_file *m, int nr_online,
+				      int *online_nodes)
 {
-	struct task_struct *task;
-	int i, j, online_nodes[NUMA_NODE_COUNT], nr_online = 0;
-	int total_hydra = 0;
-	unsigned long total_vmas = 0;
-	unsigned long total_vma_counts[NUMA_NODE_COUNT] = {};
-	int total_cache_pages = 0;
+	seq_printf(m,
+		"======================================================\n"
+		"                  HYDRA STATUS REPORT                  \n"
+		"======================================================\n\n");
 
-	for (i = 0; i < NUMA_NODE_COUNT; i++) {
-		if (node_online(i))
-			online_nodes[nr_online++] = i;
-	}
+	seq_printf(m, "  Online nodes:       %d\n", nr_online);
 
-	seq_printf(m, "Online nodes: %d\n", nr_online);
 	switch (sysctl_hydra_tlbflush_opt) {
 	case 0:
-		seq_printf(m, "TLB flush optimization: 0 (off)\n");
+		seq_printf(m, "  TLB flush opt:      off\n");
 		break;
 	case 1:
-		seq_printf(m, "TLB flush optimization: 1 (precise, single-page only)\n");
+		seq_printf(m, "  TLB flush opt:      precise (single-PMD only)\n");
 		break;
 	case 2:
-		seq_printf(m, "TLB flush optimization: 2 (precise, always)\n");
+		seq_printf(m, "  TLB flush opt:      precise (all ranges)\n");
 		break;
 	case 3:
-		seq_printf(m, "TLB flush optimization: 3 (all-or-none)\n");
+		seq_printf(m, "  TLB flush opt:      all-or-none\n");
 		break;
 	default:
-		seq_printf(m, "TLB flush optimization: %d (unknown)\n", sysctl_hydra_tlbflush_opt);
+		seq_printf(m, "  TLB flush opt:      %d (unknown)\n",
+			   sysctl_hydra_tlbflush_opt);
 		break;
 	}
-	seq_printf(m, "Replication order: %d (%lu PTEs or 1 huge PMD per fault)\n",
-		   sysctl_hydra_repl_order,
-		   sysctl_hydra_repl_order > 0 ? 1UL << sysctl_hydra_repl_order : 1UL);
-	seq_printf(m, "Auto-enable: %s\n\n",
-		   sysctl_hydra_auto_enable ? "yes" : "no");
 
-	seq_printf(m, "Cache:\n");
+	seq_printf(m, "  Replication order:  %d (%lu PTEs per fault)\n",
+		   sysctl_hydra_repl_order,
+		   sysctl_hydra_repl_order > 0
+			   ? 1UL << sysctl_hydra_repl_order : 1UL);
+	seq_printf(m, "  Auto-enable:        %s\n\n",
+		   sysctl_hydra_auto_enable ? "yes" : "no");
+}
+
+static void hydra_status_print_cache(struct seq_file *m, int nr_online,
+				     int *online_nodes)
+{
+	int i, total_pages = 0;
+	long total_hits = 0, total_misses = 0, total_returns = 0;
+
+	seq_printf(m, "  PAGE TABLE CACHE\n");
+	seq_printf(m, "  %4s %8s %8s %8s %8s\n",
+		   "Node", "Pages", "Hits", "Misses", "Returns");
+	seq_printf(m, "  ---- -------- -------- -------- --------\n");
+
 	for (i = 0; i < nr_online; i++) {
 		int n = online_nodes[i];
 		int count = atomic_read(&hydra_cache[n].count);
@@ -333,30 +342,223 @@ static int hydra_status_show(struct seq_file *m, void *v)
 		long misses = atomic64_read(&hydra_cache[n].misses);
 		long returns = atomic64_read(&hydra_cache[n].returns);
 
-		total_cache_pages += count;
-		seq_printf(m, "  node %d: %d pages  (hits %ld  misses %ld  returns %ld)\n",
+		total_pages += count;
+		total_hits += hits;
+		total_misses += misses;
+		total_returns += returns;
+
+		seq_printf(m, "  %4d %8d %8ld %8ld %8ld\n",
 			   n, count, hits, misses, returns);
 	}
-	seq_printf(m, "  total: %d pages (%lu KB)\n\n",
-		   total_cache_pages, (unsigned long)total_cache_pages * PAGE_SIZE / 1024);
 
-	seq_printf(m, "%-20s  %-6s  %-6s  %-10s  %-10s  %-10s  %-10s  %-12s  %-10s  %-12s",
-		   "PROCESS", "PID", "VMAS", "TLB_TOTAL", "TLB_SENT", "TLB_SAVED",
-		   "PTE_FAULTS", "PTES_COPIED", "HPMD_FAULT", "HPMD_COPIED");
-	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " %5s%d", "n", online_nodes[i]);
+	seq_printf(m, "  ---- -------- -------- -------- --------\n");
+	seq_printf(m, "  Tot. %8d %8ld %8ld %8ld\n",
+		   total_pages, total_hits, total_misses, total_returns);
+	seq_printf(m, "       (%lu KB)\n\n",
+		   (unsigned long)total_pages * PAGE_SIZE / 1024);
+}
+
+static void hydra_status_print_tlb_table(struct seq_file *m,
+					 struct mm_struct *mm)
+{
+	long tlb_total = atomic_long_read(&mm->hydra_tlb_shootdowns_total);
+	long tlb_sent = atomic_long_read(&mm->hydra_tlb_shootdowns_sent);
+	long tlb_saved = atomic_long_read(&mm->hydra_tlb_shootdowns_saved);
+	long pct = (tlb_total > 0) ? (tlb_saved * 100) / tlb_total : 0;
+
+	seq_printf(m, "    TLB Shootdowns\n");
+	seq_printf(m, "    %10s %10s %10s %7s\n",
+		   "Total", "Sent", "Saved", "Saved%");
+	seq_printf(m, "    ---------- ---------- ---------- -------\n");
+	seq_printf(m, "    %10ld %10ld %10ld %5ld%%\n\n",
+		   tlb_total, tlb_sent, tlb_saved, pct);
+}
+
+static void hydra_status_print_repl_table(struct seq_file *m,
+					  struct mm_struct *mm)
+{
+	long pte_faults = atomic_long_read(&mm->hydra_repl_pte_faults);
+	long ptes_copied = atomic_long_read(&mm->hydra_repl_ptes_copied);
+	long hpmd_faults = atomic_long_read(&mm->hydra_repl_hugepmd_faults);
+	long hpmd_copied = atomic_long_read(&mm->hydra_repl_hugepmd_copied);
+	long avg_pte = (pte_faults > 0) ? ptes_copied / pte_faults : 0;
+	long avg_hpmd = (hpmd_faults > 0) ? hpmd_copied / hpmd_faults : 0;
+
+	seq_printf(m, "    Replication Faults\n");
+	seq_printf(m, "    %-8s %10s %10s %10s\n",
+		   "Type", "Faults", "Copied", "Avg/fault");
+	seq_printf(m, "    -------- ---------- ---------- ----------\n");
+	seq_printf(m, "    %-8s %10ld %10ld %10ld\n",
+		   "PTE", pte_faults, ptes_copied, avg_pte);
+	seq_printf(m, "    %-8s %10ld %10ld %10ld\n\n",
+		   "HugePMD", hpmd_faults, hpmd_copied, avg_hpmd);
+}
+
+static void hydra_status_print_vma_dist(struct seq_file *m,
+					struct mm_struct *mm,
+					int nr_online, int *online_nodes)
+{
+	struct vm_area_struct *vma;
+	unsigned long vma_counts[NUMA_NODE_COUNT] = {};
+	unsigned long nr_vmas = 0;
+	unsigned long bar_max;
+	bool got_lock;
+	int i;
+
+	got_lock = mmap_read_trylock(mm);
+	if (!got_lock) {
+		seq_printf(m, "    VMA Distribution: (lock busy)\n\n");
+		return;
+	}
+
+	{
+		VMA_ITERATOR(vmi, mm, 0);
+		for_each_vma(vmi, vma) {
+			unsigned long n = vma->master_pgd_node;
+			if (n < NUMA_NODE_COUNT)
+				vma_counts[n]++;
+			nr_vmas++;
+		}
+	}
+	mmap_read_unlock(mm);
+
+	seq_printf(m, "    VMA Distribution (%lu total)\n", nr_vmas);
+	seq_printf(m, "    %4s %6s %5s  %s\n",
+		   "Node", "VMAs", "%", "");
+	seq_printf(m, "    ---- ------ -----  --------------------\n");
+
+	bar_max = 0;
+	for (i = 0; i < nr_online; i++) {
+		if (vma_counts[online_nodes[i]] > bar_max)
+			bar_max = vma_counts[online_nodes[i]];
+	}
+
+	for (i = 0; i < nr_online; i++) {
+		int n = online_nodes[i];
+		unsigned long cnt = vma_counts[n];
+		int pct = nr_vmas > 0 ? (int)((cnt * 100) / nr_vmas) : 0;
+		int bar_len = bar_max > 0 ? (int)((cnt * 20) / bar_max) : 0;
+		int j;
+
+		seq_printf(m, "    %4d %6lu %4d%%  ", n, cnt, pct);
+		for (j = 0; j < bar_len; j++)
+			seq_printf(m, "#");
+		seq_printf(m, "\n");
+	}
 	seq_printf(m, "\n");
+}
+
+static void hydra_status_print_migration(struct seq_file *m,
+					 struct mm_struct *mm,
+					 int nr_online, int *online_nodes)
+{
+	long matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	long row_sum[NUMA_NODE_COUNT];
+	long matrix_total = 0;
+	int i, j;
+	int cols;
+
+	for (i = 0; i < NUMA_NODE_COUNT; i++) {
+		row_sum[i] = 0;
+		for (j = 0; j < NUMA_NODE_COUNT; j++) {
+			matrix[i][j] = atomic_long_read(
+				&mm->hydra_migration_matrix[i][j]);
+			matrix_total += matrix[i][j];
+			row_sum[i] += matrix[i][j];
+		}
+	}
+
+	if (matrix_total == 0)
+		return;
+
+	cols = nr_online;
+	if (cols > 4) {
+		seq_printf(m, "    Migration (%ld pages migrated)\n", matrix_total);
+		seq_printf(m, "    %4s %10s  Top destinations\n",
+			   "From", "Total");
+		seq_printf(m, "    ---- ----------  "
+			   "-----------------------------\n");
+
+		for (i = 0; i < nr_online; i++) {
+			int src = online_nodes[i];
+			int best[3] = {-1, -1, -1};
+			long best_v[3] = {0, 0, 0};
+
+			if (row_sum[src] == 0)
+				continue;
+
+			for (j = 0; j < nr_online; j++) {
+				int dst = online_nodes[j];
+				long v = matrix[src][dst];
+				if (v <= 0)
+					continue;
+				if (v > best_v[0]) {
+					best_v[2] = best_v[1]; best[2] = best[1];
+					best_v[1] = best_v[0]; best[1] = best[0];
+					best_v[0] = v; best[0] = dst;
+				} else if (v > best_v[1]) {
+					best_v[2] = best_v[1]; best[2] = best[1];
+					best_v[1] = v; best[1] = dst;
+				} else if (v > best_v[2]) {
+					best_v[2] = v; best[2] = dst;
+				}
+			}
+
+			seq_printf(m, "    %4d %10ld  ", src, row_sum[src]);
+			for (j = 0; j < 3; j++) {
+				if (best[j] < 0)
+					break;
+				if (j > 0)
+					seq_printf(m, ", ");
+				seq_printf(m, "n%d:%ld", best[j], best_v[j]);
+			}
+			seq_printf(m, "\n");
+		}
+	} else {
+		seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
+		seq_printf(m, "    %4s", "s\\d");
+		for (i = 0; i < cols; i++)
+			seq_printf(m, " %8d", online_nodes[i]);
+		seq_printf(m, "\n");
+
+		seq_printf(m, "    ----");
+		for (i = 0; i < cols; i++)
+			seq_printf(m, " --------");
+		seq_printf(m, "\n");
+
+		for (i = 0; i < nr_online; i++) {
+			int src = online_nodes[i];
+			seq_printf(m, "    %4d", src);
+			for (j = 0; j < cols; j++)
+				seq_printf(m, " %8ld", matrix[src][online_nodes[j]]);
+			seq_printf(m, "\n");
+		}
+	}
+	seq_printf(m, "\n");
+}
+
+static int hydra_status_show(struct seq_file *m, void *v)
+{
+	struct task_struct *task;
+	int i, online_nodes[NUMA_NODE_COUNT], nr_online = 0;
+	int total_hydra = 0;
+
+	for (i = 0; i < NUMA_NODE_COUNT; i++) {
+		if (node_online(i))
+			online_nodes[nr_online++] = i;
+	}
+
+	hydra_status_print_header(m, nr_online, online_nodes);
+	hydra_status_print_cache(m, nr_online, online_nodes);
+
+	seq_printf(m,
+		"------------------------------------------------------\n"
+		"  PER-PROCESS DETAILS\n"
+		"------------------------------------------------------\n\n");
 
 	rcu_read_lock();
 	for_each_process(task) {
 		struct mm_struct *mm;
-		unsigned long vma_counts[NUMA_NODE_COUNT] = {};
-		unsigned long nr_vmas = 0;
-		bool got_lock;
-		long tlb_total, tlb_sent, tlb_saved;
-		long pte_faults, ptes_copied, hugepmd_faults, hugepmd_copied;
-		long matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
-		long matrix_total = 0;
 
 		mm = task->mm;
 		if (!mm || !READ_ONCE(mm->lazy_repl_enabled))
@@ -364,78 +566,26 @@ static int hydra_status_show(struct seq_file *m, void *v)
 
 		total_hydra++;
 
-		tlb_total = atomic_long_read(&mm->hydra_tlb_shootdowns_total);
-		tlb_sent = atomic_long_read(&mm->hydra_tlb_shootdowns_sent);
-		tlb_saved = atomic_long_read(&mm->hydra_tlb_shootdowns_saved);
-		pte_faults = atomic_long_read(&mm->hydra_repl_pte_faults);
-		ptes_copied = atomic_long_read(&mm->hydra_repl_ptes_copied);
-		hugepmd_faults = atomic_long_read(&mm->hydra_repl_hugepmd_faults);
-		hugepmd_copied = atomic_long_read(&mm->hydra_repl_hugepmd_copied);
-
-		for (i = 0; i < NUMA_NODE_COUNT; i++)
-			for (j = 0; j < NUMA_NODE_COUNT; j++) {
-				matrix[i][j] = atomic_long_read(&mm->hydra_migration_matrix[i][j]);
-				matrix_total += matrix[i][j];
-			}
-
 		rcu_read_unlock();
 
-		got_lock = mmap_read_trylock(mm);
-		if (got_lock) {
-			struct vm_area_struct *vma;
-			VMA_ITERATOR(vmi, mm, 0);
-			for_each_vma(vmi, vma) {
-				unsigned long n = vma->master_pgd_node;
-				if (n < NUMA_NODE_COUNT) {
-					vma_counts[n]++;
-					total_vma_counts[n]++;
-				}
-				nr_vmas++;
-			}
-			total_vmas += nr_vmas;
-			mmap_read_unlock(mm);
-		}
+		seq_printf(m, "  [%s]  pid %d\n", task->comm, task->pid);
+		seq_printf(m,
+			"  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
-		seq_printf(m, "%-20s  %-6d  %-6lu  %-10ld  %-10ld  %-10ld  %-10ld  %-12ld  %-10ld  %-12ld",
-			   task->comm, task->pid, nr_vmas,
-			   tlb_total, tlb_sent, tlb_saved,
-			   pte_faults, ptes_copied, hugepmd_faults, hugepmd_copied);
-		for (i = 0; i < nr_online; i++) {
-			int n = online_nodes[i];
-			if (got_lock)
-				seq_printf(m, " %6lu", vma_counts[n]);
-			else
-				seq_printf(m, " %6s", "?");
-		}
-		seq_printf(m, "\n");
-
-		if (matrix_total > 0) {
-			seq_printf(m, "  Migration matrix (pages): %ld total\n", matrix_total);
-			seq_printf(m, "  %8s", "src\\dst");
-			for (i = 0; i < nr_online; i++)
-				seq_printf(m, " %8d", online_nodes[i]);
-			seq_printf(m, "\n");
-			for (i = 0; i < nr_online; i++) {
-				int src = online_nodes[i];
-				seq_printf(m, "  %8d", src);
-				for (j = 0; j < nr_online; j++) {
-					int dst = online_nodes[j];
-					seq_printf(m, " %8ld", matrix[src][dst]);
-				}
-				seq_printf(m, "\n");
-			}
-		}
+		hydra_status_print_tlb_table(m, mm);
+		hydra_status_print_repl_table(m, mm);
+		hydra_status_print_vma_dist(m, mm, nr_online, online_nodes);
+		hydra_status_print_migration(m, mm, nr_online, online_nodes);
 
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
 
-	seq_printf(m, "\n%-20s  %-6s  %-6lu",
-		   "TOTAL", "", total_vmas);
-	seq_printf(m, "  %-10s  %-10s  %-10s  %-10s  %-12s  %-10s", "", "", "", "", "", "");
-	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " %6lu", total_vma_counts[online_nodes[i]]);
-	seq_printf(m, "\n\n%d hydra-enabled processes\n", total_hydra);
+	seq_printf(m,
+		"======================================================\n"
+		"  %d hydra-enabled process(es)\n"
+		"======================================================\n",
+		total_hydra);
 
 	return 0;
 }
@@ -941,6 +1091,7 @@ static int hydra_history_show(struct seq_file *m, void *v)
 	struct hydra_history_entry *e;
 	int i, j, nr_online = 0;
 	int online_nodes[NUMA_NODE_COUNT];
+	int entry_num = 0;
 
 	for (i = 0; i < NUMA_NODE_COUNT; i++) {
 		if (node_online(i))
@@ -951,48 +1102,148 @@ static int hydra_history_show(struct seq_file *m, void *v)
 
 	if (hydra_history_count == 0) {
 		spin_unlock_irqrestore(&hydra_history_lock, flags);
-		seq_printf(m, "No history entries.\n");
+		seq_printf(m,
+			"======================================================\n"
+			"                   HYDRA EXIT HISTORY                  \n"
+			"======================================================\n\n"
+			"  No history entries.\n\n"
+			"======================================================\n");
 		return 0;
 	}
 
-	seq_printf(m, "%-20s  %-6s  %-20s  %-10s  %-10s  %-10s  %-10s  %-12s  %-10s  %-12s\n",
-		   "PROCESS", "PID", "EXIT_TIME", "TLB_TOTAL", "TLB_SENT", "TLB_SAVED",
-		   "PTE_FAULTS", "PTES_COPIED", "HPMD_FAULT", "HPMD_COPIED");
+	seq_printf(m,
+		"======================================================\n"
+		"                   HYDRA EXIT HISTORY                  \n"
+		"======================================================\n\n");
 
 	list_for_each_entry(e, &hydra_history_list, list) {
 		u64 sec = e->exit_time_ns;
 		u32 nsec = do_div(sec, 1000000000ULL);
+		long tlb_pct;
+		long avg_pte, avg_hpmd;
 		long matrix_total = 0;
 
-		seq_printf(m, "%-20s  %-6d  %llu.%09u  %-10ld  %-10ld  %-10ld  %-10ld  %-12ld  %-10ld  %-12ld\n",
-			   e->comm, e->pid, sec, nsec,
-			   e->tlb_total, e->tlb_sent, e->tlb_saved,
-			   e->pte_faults, e->ptes_copied,
-			   e->hugepmd_faults, e->hugepmd_copied);
+		entry_num++;
+
+		tlb_pct = (e->tlb_total > 0)
+			? (e->tlb_saved * 100) / e->tlb_total : 0;
+		avg_pte = (e->pte_faults > 0)
+			? e->ptes_copied / e->pte_faults : 0;
+		avg_hpmd = (e->hugepmd_faults > 0)
+			? e->hugepmd_copied / e->hugepmd_faults : 0;
+
+		seq_printf(m, "  [%s]  pid %d  exited %llu.%09u\n",
+			   e->comm, e->pid, sec, nsec);
+		seq_printf(m,
+			"  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+
+		seq_printf(m, "    TLB Shootdowns\n");
+		seq_printf(m, "    %10s %10s %10s %7s\n",
+			   "Total", "Sent", "Saved", "Saved%");
+		seq_printf(m, "    ---------- ---------- ---------- -------\n");
+		seq_printf(m, "    %10ld %10ld %10ld %5ld%%\n\n",
+			   e->tlb_total, e->tlb_sent, e->tlb_saved, tlb_pct);
+
+		seq_printf(m, "    Replication Faults\n");
+		seq_printf(m, "    %-8s %10s %10s %10s\n",
+			   "Type", "Faults", "Copied", "Avg/fault");
+		seq_printf(m, "    -------- ---------- ---------- ----------\n");
+		seq_printf(m, "    %-8s %10ld %10ld %10ld\n",
+			   "PTE", e->pte_faults, e->ptes_copied, avg_pte);
+		seq_printf(m, "    %-8s %10ld %10ld %10ld\n\n",
+			   "HugePMD", e->hugepmd_faults, e->hugepmd_copied,
+			   avg_hpmd);
 
 		for (i = 0; i < nr_online; i++)
 			for (j = 0; j < nr_online; j++)
 				matrix_total += e->migration_matrix[online_nodes[i]][online_nodes[j]];
 
 		if (matrix_total > 0) {
-			seq_printf(m, "  Migration matrix (pages): %ld total\n", matrix_total);
-			seq_printf(m, "  %8s", "src\\dst");
-			for (i = 0; i < nr_online; i++)
-				seq_printf(m, " %8d", online_nodes[i]);
-			seq_printf(m, "\n");
-			for (i = 0; i < nr_online; i++) {
-				int src = online_nodes[i];
-				seq_printf(m, "  %8d", src);
-				for (j = 0; j < nr_online; j++) {
-					int dst = online_nodes[j];
-					seq_printf(m, " %8ld", e->migration_matrix[src][dst]);
+			int cols = nr_online;
+
+			if (cols > 4) {
+				long row_sum[NUMA_NODE_COUNT] = {};
+
+				for (i = 0; i < nr_online; i++)
+					for (j = 0; j < nr_online; j++)
+						row_sum[online_nodes[i]] +=
+							e->migration_matrix[online_nodes[i]][online_nodes[j]];
+
+				seq_printf(m, "    Migration (%ld pages migrated)\n",
+					   matrix_total);
+				seq_printf(m, "    %4s %10s  Top destinations\n",
+					   "From", "Total");
+				seq_printf(m, "    ---- ----------  "
+					   "-----------------------------\n");
+
+				for (i = 0; i < nr_online; i++) {
+					int src = online_nodes[i];
+					int best[3] = {-1, -1, -1};
+					long best_v[3] = {0, 0, 0};
+
+					if (row_sum[src] == 0)
+						continue;
+
+					for (j = 0; j < nr_online; j++) {
+						int dst = online_nodes[j];
+						long val = e->migration_matrix[src][dst];
+						if (val <= 0)
+							continue;
+						if (val > best_v[0]) {
+							best_v[2] = best_v[1]; best[2] = best[1];
+							best_v[1] = best_v[0]; best[1] = best[0];
+							best_v[0] = val; best[0] = dst;
+						} else if (val > best_v[1]) {
+							best_v[2] = best_v[1]; best[2] = best[1];
+							best_v[1] = val; best[1] = dst;
+						} else if (val > best_v[2]) {
+							best_v[2] = val; best[2] = dst;
+						}
+					}
+
+					seq_printf(m, "    %4d %10ld  ", src, row_sum[src]);
+					for (j = 0; j < 3; j++) {
+						if (best[j] < 0)
+							break;
+						if (j > 0)
+							seq_printf(m, ", ");
+						seq_printf(m, "n%d:%ld", best[j], best_v[j]);
+					}
+					seq_printf(m, "\n");
 				}
+			} else {
+				seq_printf(m, "    Migration Matrix (%ld pages)\n",
+					   matrix_total);
+				seq_printf(m, "    %4s", "s\\d");
+				for (i = 0; i < cols; i++)
+					seq_printf(m, " %8d", online_nodes[i]);
 				seq_printf(m, "\n");
+
+				seq_printf(m, "    ----");
+				for (i = 0; i < cols; i++)
+					seq_printf(m, " --------");
+				seq_printf(m, "\n");
+
+				for (i = 0; i < nr_online; i++) {
+					int src = online_nodes[i];
+					seq_printf(m, "    %4d", src);
+					for (j = 0; j < cols; j++)
+						seq_printf(m, " %8ld",
+							   e->migration_matrix[src][online_nodes[j]]);
+					seq_printf(m, "\n");
+				}
 			}
+			seq_printf(m, "\n");
 		}
 	}
 
-	seq_printf(m, "\n%d entries\n", hydra_history_count);
+	seq_printf(m,
+		"======================================================\n"
+		"  %d entr%s\n"
+		"======================================================\n",
+		hydra_history_count,
+		hydra_history_count == 1 ? "y" : "ies");
+
 	spin_unlock_irqrestore(&hydra_history_lock, flags);
 
 	return 0;
