@@ -9,6 +9,8 @@
 
 #include <asm/tlbflush.h>
 
+#include <linux/hydra_util.h>
+
 #include "internal.h"
 
 /*
@@ -299,6 +301,8 @@ static int walk_pgd_range(unsigned long addr, unsigned long end,
 
 	if (walk->pgd)
 		pgd = walk->pgd + pgd_index(addr);
+	else if (walk->mm->lazy_repl_enabled && walk->vma)
+		pgd = pgd_offset_node(walk->mm, addr, walk->vma->master_pgd_node);
 	else
 		pgd = pgd_offset(walk->mm, addr);
 	do {

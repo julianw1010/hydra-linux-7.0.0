@@ -3200,9 +3200,7 @@ static inline pud_t pud_mkspecial(pud_t pud)
 #endif	/* CONFIG_ARCH_SUPPORTS_PUD_PFNMAP */
 
 extern pte_t *get_locked_pte(struct mm_struct *mm, unsigned long addr,
-			     spinlock_t **ptl);
-extern pte_t *get_locked_pte_node(struct mm_struct *mm, unsigned long addr,
-				  spinlock_t **ptl, int node);
+			     spinlock_t **ptl, struct vm_area_struct *vma);
 #ifdef __PAGETABLE_P4D_FOLDED
 static inline int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd,
 						unsigned long address)

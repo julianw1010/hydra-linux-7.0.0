@@ -2489,38 +2489,21 @@ static pmd_t *walk_to_pmd(struct mm_struct *mm, unsigned long addr, int master_n
 }
 
 pte_t *get_locked_pte(struct mm_struct *mm, unsigned long addr,
-		      spinlock_t **ptl)
+		      spinlock_t **ptl, struct vm_area_struct *vma)
 {
 	pmd_t *pmd;
-	int node = 0;
-	if (mm->lazy_repl_enabled && current->hydra_fault_target_node >= 0)
-		node = current->hydra_fault_target_node;
+	int node;
+
+	if (mm->lazy_repl_enabled && vma)
+		node = vma->master_pgd_node;
+	else if (mm->lazy_repl_enabled)
+		BUG();
+	else
+		node = 0;
+
 	pmd = walk_to_pmd(mm, addr, node);
 	if (!pmd)
 		return NULL;
-	return pte_alloc_map_lock(mm, pmd, addr, ptl);
-}
-
-pte_t *get_locked_pte_node(struct mm_struct *mm, unsigned long addr,
-			   spinlock_t **ptl, int node)
-{
-	pgd_t *pgd;
-	p4d_t *p4d;
-	pud_t *pud;
-	pmd_t *pmd;
-
-	pgd = pgd_offset_node(mm, addr, node);
-	p4d = p4d_alloc(mm, pgd, addr);
-	if (!p4d)
-		return NULL;
-	pud = pud_alloc(mm, p4d, addr);
-	if (!pud)
-		return NULL;
-	pmd = pmd_alloc(mm, pud, addr);
-	if (!pmd)
-		return NULL;
-
-	VM_BUG_ON(pmd_trans_huge(*pmd));
 	return pte_alloc_map_lock(mm, pmd, addr, ptl);
 }
 
@@ -2624,10 +2607,7 @@ static int insert_page(struct vm_area_struct *vma, unsigned long addr,
 	if (retval)
 		goto out;
 	retval = -ENOMEM;
-	if (vma->vm_mm->lazy_repl_enabled)
-		pte = get_locked_pte_node(vma->vm_mm, addr, &ptl, vma->master_pgd_node);
-	else
-		pte = get_locked_pte(vma->vm_mm, addr, &ptl);
+	pte = get_locked_pte(vma->vm_mm, addr, &ptl, vma);
 	if (!pte)
 		goto out;
 	retval = insert_page_into_pte_locked(vma, pte, addr, page, prot,
@@ -2869,7 +2849,7 @@ static vm_fault_t insert_pfn(struct vm_area_struct *vma, unsigned long addr,
 	pte_t *pte, entry;
 	spinlock_t *ptl;
 
-	pte = get_locked_pte(mm, addr, &ptl);
+	pte = get_locked_pte(mm, addr, &ptl, vma);
 	if (!pte)
 		return VM_FAULT_OOM;
 	entry = ptep_get(pte);
@@ -3632,6 +3612,7 @@ static int __apply_to_page_range(struct mm_struct *mm, unsigned long addr,
 	if (WARN_ON(addr >= end))
 		return -EINVAL;
 
+	BUG_ON(mm->lazy_repl_enabled);
 	pgd = pgd_offset(mm, addr);
 	do {
 		next = pgd_addr_end(addr, end);
@@ -7723,7 +7704,10 @@ int follow_pfnmap_start(struct follow_pfnmap_args *args)
 	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
 		goto out;
 retry:
-	pgdp = pgd_offset(mm, address);
+	if (mm->lazy_repl_enabled)
+		pgdp = pgd_offset_node(mm, address, vma->master_pgd_node);
+	else
+		pgdp = pgd_offset(mm, address);
 	if (pgd_none(*pgdp) || unlikely(pgd_bad(*pgdp)))
 		goto out;
 

@@ -821,9 +821,8 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 	start = untagged_addr(start);
 
 	prot &= ~(PROT_GROWSDOWN|PROT_GROWSUP);
-	if (grows == (PROT_GROWSDOWN|PROT_GROWSUP)) /* can't be both */
+	if (grows == (PROT_GROWSDOWN|PROT_GROWSUP))
 		return -EINVAL;
-
 	if (start & ~PAGE_MASK)
 		return -EINVAL;
 	if (!len)
@@ -840,10 +839,6 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 	if (mmap_write_lock_killable(current->mm))
 		return -EINTR;
 
-	/*
-	 * If userspace did not allocate the pkey, do not let
-	 * them use it here.
-	 */
 	error = -EINVAL;
 	if ((pkey != -1) && !mm_pkey_is_allocated(current->mm, pkey))
 		goto out;
@@ -889,30 +884,17 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 			break;
 		}
 
-		if (vma->vm_mm->lazy_repl_enabled && sysctl_hydra_tlbflush_opt) {
-			pte_t *pte = hydra_find_pte(vma->vm_mm, nstart, vma->master_pgd_node);
-			if (!HYDRA_FIND_BAD(pte)) {
-				nodes_clear(tlb.nodemask);
-				hydra_calculate_tlbflush_nodemask(virt_to_page(pte), &tlb.nodemask);
-			}
-		}
+		tlb.vma = vma;
 
-		/* Does the application expect PROT_READ to imply PROT_EXEC */
 		if (rier && (vma->vm_flags & VM_MAYEXEC))
 			prot |= PROT_EXEC;
 
-		/*
-		 * Each mprotect() call explicitly passes r/w/x permissions.
-		 * If a permission is not passed to mprotect(), it must be
-		 * cleared from the VMA.
-		 */
 		mask_off_old_flags = VM_ACCESS_FLAGS | VM_FLAGS_CLEAR;
 
 		new_vma_pkey = arch_override_mprotect_pkey(vma, prot, pkey);
 		newflags = calc_vm_prot_bits(prot, new_vma_pkey);
 		newflags |= (vma->vm_flags & ~mask_off_old_flags);
 
-		/* newflags >> 4 shift VM_MAY% in place of VM_% */
 		if ((newflags & ~(newflags >> 4)) & VM_ACCESS_FLAGS) {
 			error = -EACCES;
 			break;
@@ -923,7 +905,6 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 			break;
 		}
 
-		/* Allow architectures to sanity-check the new flags */
 		if (!arch_validate_flags(newflags)) {
 			error = -EINVAL;
 			break;
@@ -950,12 +931,9 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
 		tmp = vma_iter_end(&vmi);
 		nstart = tmp;
 		prot = reqprot;
-
-	tlb.collect_nodemask = 1;
-	tlb_finish_mmu(&tlb);
-	tlb.collect_nodemask = 0;
 	}
 
+	tlb_finish_mmu(&tlb);
 
 	if (!error && tmp < end)
 		error = -ENOMEM;

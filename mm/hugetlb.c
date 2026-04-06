@@ -7056,14 +7056,20 @@ pte_t *huge_pte_alloc(struct mm_struct *mm, struct vm_area_struct *vma,
  * table.
  */
 pte_t *huge_pte_offset(struct mm_struct *mm,
-		       unsigned long addr, unsigned long sz)
+		       unsigned long addr, unsigned long sz,
+		       struct vm_area_struct *vma)
 {
 	pgd_t *pgd;
 	p4d_t *p4d;
 	pud_t *pud;
 	pmd_t *pmd;
 
-	pgd = pgd_offset(mm, addr);
+	if (mm->lazy_repl_enabled && vma)
+		pgd = pgd_offset_node(mm, addr, vma->master_pgd_node);
+	else if (mm->lazy_repl_enabled)
+		BUG();
+	else
+		pgd = pgd_offset(mm, addr);
 	if (!pgd_present(*pgd))
 		return NULL;
 	p4d = p4d_offset(pgd, addr);
