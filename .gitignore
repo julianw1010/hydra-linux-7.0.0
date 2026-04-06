@@ -11,6 +11,8 @@
 # Normal rules (sorted alphabetically)
 #
 boot.sh
+diffall.sh
+hydra700.txt
 .*
 *.a
 *.asn1.[ch]
