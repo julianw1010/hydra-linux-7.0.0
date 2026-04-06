@@ -6714,6 +6714,8 @@ static int hydra_replicate_partial_pte(struct mm_struct *mm,
 			pte_t val = master_pte_base[i];
 			if (pte_present(val))
 				val = pte_mkold(val);
+			else
+				val = __pte(0);
 			repl_pte_base[i] = val;
 		}
 	}
