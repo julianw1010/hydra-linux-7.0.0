@@ -7207,10 +7207,7 @@ retry_pud:
 			goto out_restore;
 	}
 
-	if (mm->lazy_repl_enabled)
-		vmf.orig_pmd = hydra_get_pmd(vmf.pmd);
-	else
-		vmf.orig_pmd = pmdp_get_lockless(vmf.pmd);
+	vmf.orig_pmd = pmdp_get_lockless(vmf.pmd);
 
 	if (pmd_none(vmf.orig_pmd))
 		goto fallback;
