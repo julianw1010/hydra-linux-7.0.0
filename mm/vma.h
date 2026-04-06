@@ -109,6 +109,8 @@ struct vma_merge_struct {
 	/* If copied from (i.e. mremap()'d) the VMA from which we are copying. */
 	struct vm_area_struct *copied_from;
 
+	unsigned long master_pgd_node;
+
 	/* Flags which callers can use to modify merge behaviour: */
 
 	/*
@@ -242,6 +244,7 @@ static inline pgoff_t vma_pgoff_offset(struct vm_area_struct *vma,
 		.vm_flags = vm_flags_,					\
 		.pgoff = pgoff_,					\
 		.state = VMA_MERGE_START,				\
+		.master_pgd_node = 0,					\
 	}
 
 #define VMG_VMA_STATE(name, vmi_, prev_, vma_, start_, end_)	\
@@ -261,6 +264,7 @@ static inline pgoff_t vma_pgoff_offset(struct vm_area_struct *vma,
 		.uffd_ctx = vma_->vm_userfaultfd_ctx,		\
 		.anon_name = anon_vma_name(vma_),		\
 		.state = VMA_MERGE_START,			\
+		.master_pgd_node = vma_->master_pgd_node,	\
 	}
 
 #ifdef CONFIG_DEBUG_VM_MAPLE_TREE

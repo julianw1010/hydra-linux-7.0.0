@@ -11,6 +11,7 @@
 #define __HAVE_ARCH_PTE_ALLOC_ONE
 #define __HAVE_ARCH_PGD_FREE
 #include <asm-generic/pgalloc.h>
+#include <linux/page-flags.h>
 
 static inline int  __paravirt_pgd_alloc(struct mm_struct *mm) { return 0; }
 
@@ -47,9 +48,28 @@ static inline unsigned int pgd_allocation_order(void)
  * Allocate and free page tables.
  */
 extern pgd_t *pgd_alloc(struct mm_struct *);
+extern pgd_t *repl_pgd_alloc(struct mm_struct *, size_t node_id);
 extern void pgd_free(struct mm_struct *mm, pgd_t *pgd);
 
 extern pgtable_t pte_alloc_one(struct mm_struct *);
+extern pgtable_t repl_pte_alloc_one(struct mm_struct *, unsigned long, size_t node_id, size_t owner_node);
+
+static inline struct page *repl_alloc_page_on_node(size_t nid, unsigned int order)
+{
+	nodemask_t nm = NODE_MASK_NONE;
+	struct page *p;
+
+	node_set(nid, nm);
+	p = __alloc_pages((GFP_KERNEL_ACCOUNT | __GFP_ZERO | __GFP_THISNODE), order, nid, &nm);
+
+	if (p) {
+		p->next_replica = NULL;
+		p->pt_owner_mm = NULL;
+		p->mitosis_tracking = NULL;
+	}
+
+	return p;
+}
 
 extern void ___pte_free_tlb(struct mmu_gather *tlb, struct page *pte);
 
@@ -83,6 +103,35 @@ static inline void pmd_populate(struct mm_struct *mm, pmd_t *pmd,
 }
 
 #if CONFIG_PGTABLE_LEVELS > 2
+
+static inline pmd_t *repl_pmd_alloc_one(struct mm_struct *mm, unsigned long addr, size_t nid, size_t owner_node)
+{
+	struct page *page;
+	struct ptdesc *ptdesc;
+	page = hydra_cache_pop(nid, HYDRA_CACHE_PMD);
+	if (page) {
+		ptdesc = page_ptdesc(page);
+		if (!pagetable_pmd_ctor(mm, ptdesc)) {
+			if (!hydra_cache_push(page, nid, HYDRA_CACHE_PMD)) {
+				__free_page(page);
+			}
+			return NULL;
+		}
+		page->pt_owner_mm = mm;
+		return (pmd_t *)page_address(page);
+	}
+	page = repl_alloc_page_on_node(nid, 0);
+	if (!page)
+		return NULL;
+	ptdesc = page_ptdesc(page);
+	if (!pagetable_pmd_ctor(mm, ptdesc)) {
+		__free_page(page);
+		return NULL;
+	}
+	page->pt_owner_mm = mm;
+	return (pmd_t *)page_address(page);
+}
+
 extern void ___pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmd);
 
 static inline void __pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmd,
@@ -118,6 +167,24 @@ static inline void p4d_populate_safe(struct mm_struct *mm, p4d_t *p4d, pud_t *pu
 {
 	paravirt_alloc_pud(mm, __pa(pud) >> PAGE_SHIFT);
 	set_p4d_safe(p4d, __p4d(_PAGE_TABLE | __pa(pud)));
+}
+
+static inline pud_t *repl_pud_alloc_one(struct mm_struct *mm, unsigned long addr, size_t nid, size_t owner_node)
+{
+	struct page *page;
+
+	page = hydra_cache_pop(nid, HYDRA_CACHE_PUD);
+	if (page) {
+		page->pt_owner_mm = mm;
+		return (pud_t *)page_address(page);
+	}
+
+	page = repl_alloc_page_on_node(nid, 0);
+	if (!page)
+		return NULL;
+
+	page->pt_owner_mm = mm;
+	return (pud_t *)page_address(page);
 }
 
 extern void ___pud_free_tlb(struct mmu_gather *tlb, pud_t *pud);

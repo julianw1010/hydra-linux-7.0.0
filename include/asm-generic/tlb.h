@@ -337,7 +337,8 @@ struct mmu_gather {
 	 * we have performed an operation which
 	 * requires a complete flush of the tlb
 	 */
-	unsigned int		need_flush_all : 1;
+	unsigned int		need_flush_all : 1,
+                        collect_nodemask : 1;
 
 	/*
 	 * we have removed page directories
@@ -379,6 +380,9 @@ struct mmu_gather {
 	unsigned int		fully_unshared_tables : 1;
 
 	unsigned int		batch_count;
+
+	struct vm_area_struct *vma;
+	nodemask_t nodemask;
 
 #ifndef CONFIG_MMU_GATHER_NO_GATHER
 	struct mmu_gather_batch *active;
@@ -499,8 +503,9 @@ static inline void tlb_flush_mmu_tlbonly(struct mmu_gather *tlb)
 	 * these bits.
 	 */
 	if (!(tlb->freed_tables || tlb->cleared_ptes || tlb->cleared_pmds ||
-	      tlb->cleared_puds || tlb->cleared_p4ds || tlb->unshared_tables))
+	      tlb->cleared_puds || tlb->cleared_p4ds)) {
 		return;
+	}
 
 	tlb_flush(tlb);
 	__tlb_reset_range(tlb);

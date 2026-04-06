@@ -47,6 +47,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/thp.h>
+#include <linux/hydra_util.h>
 
 /*
  * By default, transparent hugepage support is disabled in order to avoid
@@ -320,6 +321,7 @@ static ssize_t enabled_store(struct kobject *kobj,
 			     struct kobj_attribute *attr,
 			     const char *buf, size_t count)
 {
+
 	ssize_t ret = count;
 
 	if (sysfs_streq(buf, "always")) {
@@ -1889,7 +1891,7 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	spin_lock_nested(src_ptl, SINGLE_DEPTH_NESTING);
 
 	ret = -EAGAIN;
-	pmd = *src_pmd;
+	pmd = hydra_get_pmd(src_pmd);
 
 	if (unlikely(thp_migration_supported() &&
 		     pmd_is_valid_softleaf(pmd))) {
@@ -2192,6 +2194,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	pmd_t pmd, old_pmd;
 	bool writable = false;
 	int flags = 0;
+	int orig_nid = NUMA_NO_NODE;
 
 	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
 	old_pmd = pmdp_get(vmf->pmd);
@@ -2217,6 +2220,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		goto out_map;
 
 	nid = folio_nid(folio);
+	orig_nid = nid;
 
 	target_nid = numa_migrate_check(folio, vmf, haddr, &flags, writable,
 					&last_cpupid);
@@ -2233,6 +2237,10 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	if (!migrate_misplaced_folio(folio, target_nid)) {
 		flags |= TNF_MIGRATED;
 		nid = target_nid;
+		if (vma->vm_mm->lazy_repl_enabled &&
+		    orig_nid >= 0 && orig_nid < NUMA_NODE_COUNT &&
+		    target_nid >= 0 && target_nid < NUMA_NODE_COUNT)
+			atomic_long_add(HPAGE_PMD_NR, &vma->vm_mm->hydra_migration_matrix[orig_nid][target_nid]);
 		task_numa_fault(last_cpupid, nid, HPAGE_PMD_NR, flags);
 		return 0;
 	}
@@ -2277,7 +2285,7 @@ bool madvise_free_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	if (!ptl)
 		goto out_unlocked;
 
-	orig_pmd = *pmd;
+	orig_pmd = hydra_get_pmd(pmd);
 	if (is_huge_zero_pmd(orig_pmd))
 		goto out;
 
@@ -2621,8 +2629,9 @@ int change_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	 * dirty/young flags set by hardware.
 	 */
 	oldpmd = pmdp_invalidate_ad(vma, addr, pmd);
-
 	entry = pmd_modify(oldpmd, newprot);
+
+	
 	if (uffd_wp)
 		entry = pmd_mkuffd_wp(entry);
 	else if (uffd_wp_resolve)
@@ -3279,12 +3288,33 @@ void __split_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 {
 	spinlock_t *ptl;
 	struct mmu_notifier_range range;
+	struct mm_struct *mm = vma->vm_mm;
+	unsigned long haddr = address & HPAGE_PMD_MASK;
 
-	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma->vm_mm,
-				address & HPAGE_PMD_MASK,
-				(address & HPAGE_PMD_MASK) + HPAGE_PMD_SIZE);
+	if (mm->lazy_repl_enabled) {
+		pgd_t *pgd;
+		p4d_t *p4d;
+		pud_t *pud;
+		pmd_t *master_pmd;
+
+		pgd = pgd_offset_node(mm, haddr, vma->master_pgd_node);
+		if (pgd_none(*pgd) || pgd_bad(*pgd))
+			return;
+		p4d = p4d_offset(pgd, haddr);
+		if (p4d_none(*p4d) || p4d_bad(*p4d))
+			return;
+		pud = pud_offset(p4d, haddr);
+		if (pud_none(*pud) || pud_bad(*pud))
+			return;
+		master_pmd = pmd_offset(pud, haddr);
+		pmd = master_pmd;
+	}
+
+	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, mm,
+				haddr,
+				haddr + HPAGE_PMD_SIZE);
 	mmu_notifier_invalidate_range_start(&range);
-	ptl = pmd_lock(vma->vm_mm, pmd);
+	ptl = pmd_lock(mm, pmd);
 	split_huge_pmd_locked(vma, range.start, pmd, freeze);
 	spin_unlock(ptl);
 	mmu_notifier_invalidate_range_end(&range);
@@ -3293,7 +3323,7 @@ void __split_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 void split_huge_pmd_address(struct vm_area_struct *vma, unsigned long address,
 		bool freeze)
 {
-	pmd_t *pmd = mm_find_pmd(vma->vm_mm, address);
+	pmd_t *pmd = mm_find_pmd(vma->vm_mm, vma, address);
 
 	if (!pmd)
 		return;
@@ -4921,19 +4951,21 @@ void remove_migration_pmd(struct page_vma_mapped_walk *pvmw, struct page *new)
 	unsigned long haddr = address & HPAGE_PMD_MASK;
 	pmd_t pmde;
 	softleaf_t entry;
+	pmd_t pmdval;
 
 	if (!(pvmw->pmd && !pvmw->pte))
 		return;
 
-	entry = softleaf_from_pmd(*pvmw->pmd);
+	pmdval = hydra_get_pmd(pvmw->pmd);
+	entry = softleaf_from_pmd(pmdval);
 	folio_get(folio);
 	pmde = folio_mk_pmd(folio, READ_ONCE(vma->vm_page_prot));
 
-	if (pmd_swp_soft_dirty(*pvmw->pmd))
+	if (pmd_swp_soft_dirty(pmdval))
 		pmde = pmd_mksoft_dirty(pmde);
 	if (softleaf_is_migration_write(entry))
 		pmde = pmd_mkwrite(pmde, vma);
-	if (pmd_swp_uffd_wp(*pvmw->pmd))
+	if (pmd_swp_uffd_wp(pmdval))
 		pmde = pmd_mkuffd_wp(pmde);
 	if (!softleaf_is_migration_young(entry))
 		pmde = pmd_mkold(pmde);
@@ -4952,9 +4984,9 @@ void remove_migration_pmd(struct page_vma_mapped_walk *pvmw, struct page *new)
 							page_to_pfn(new));
 		pmde = swp_entry_to_pmd(entry);
 
-		if (pmd_swp_soft_dirty(*pvmw->pmd))
+		if (pmd_swp_soft_dirty(pmdval))
 			pmde = pmd_swp_mksoft_dirty(pmde);
-		if (pmd_swp_uffd_wp(*pvmw->pmd))
+		if (pmd_swp_uffd_wp(pmdval))
 			pmde = pmd_swp_mkuffd_wp(pmde);
 	}
 

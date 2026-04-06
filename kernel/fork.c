@@ -119,6 +119,10 @@
 
 #include <trace/events/sched.h>
 
+#include <asm/pgtable.h>
+
+#include <linux/hydra_util.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/task.h>
 
@@ -582,6 +586,15 @@ static inline int mm_alloc_pgd(struct mm_struct *mm)
 
 static inline void mm_free_pgd(struct mm_struct *mm)
 {
+	int i;
+
+	for (i = 0; i < NUMA_NODE_COUNT; i++) {
+		if (mm->repl_pgd[i] && mm->repl_pgd[i] != mm->pgd) {
+			pgd_free(mm, mm->repl_pgd[i]);
+			mm->repl_pgd[i] = NULL;
+		}
+	}
+
 	pgd_free(mm, mm->pgd);
 }
 #else
@@ -1072,6 +1085,7 @@ static void mmap_init_lock(struct mm_struct *mm)
 static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	struct user_namespace *user_ns)
 {
+	int primary_node, i;
 	mt_init_flags(&mm->mm_mt, MM_MT_FLAGS);
 	mt_set_external_lock(&mm->mm_mt, &mm->mmap_lock);
 	atomic_set(&mm->mm_users, 1);
@@ -1083,6 +1097,20 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->map_count = 0;
 	mm->locked_vm = 0;
 	atomic64_set(&mm->pinned_vm, 0);
+	mm->lazy_repl_enabled = false;
+	atomic_long_set(&mm->hydra_tlb_shootdowns_sent, 0);
+	atomic_long_set(&mm->hydra_tlb_shootdowns_saved, 0);
+	atomic_long_set(&mm->hydra_tlb_shootdowns_total, 0);	
+	atomic_long_set(&mm->hydra_repl_pte_faults, 0);
+	atomic_long_set(&mm->hydra_repl_ptes_copied, 0);
+	atomic_long_set(&mm->hydra_repl_hugepmd_faults, 0);	
+	atomic_long_set(&mm->hydra_repl_hugepmd_copied, 0);	
+	{
+		int src, dst;
+		for (src = 0; src < NUMA_NODE_COUNT; src++)
+			for (dst = 0; dst < NUMA_NODE_COUNT; dst++)
+				atomic_long_set(&mm->hydra_migration_matrix[src][dst], 0);
+	}	
 	memset(&mm->rss_stat, 0, sizeof(mm->rss_stat));
 	spin_lock_init(&mm->page_table_lock);
 	spin_lock_init(&mm->arg_lock);
@@ -1116,6 +1144,10 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	if (mm_alloc_pgd(mm))
 		goto fail_nopgd;
 
+	mm->lazy_repl_enabled = false;
+	for (i = 0; i < NUMA_NODE_COUNT; i++)
+		mm->repl_pgd[i] = mm->pgd;
+
 	if (mm_alloc_id(mm))
 		goto fail_noid;
 
@@ -1131,6 +1163,9 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 
 	mm->user_ns = get_user_ns(user_ns);
 	lru_gen_init_mm(mm);
+
+	primary_node = page_to_nid(virt_to_page(mm->pgd));
+
 	return mm;
 
 fail_pcpu:
@@ -1167,6 +1202,14 @@ EXPORT_SYMBOL_IF_KUNIT(mm_alloc);
 static inline void __mmput(struct mm_struct *mm)
 {
 	VM_BUG_ON(atomic_read(&mm->mm_users));
+
+	// if (mm->lazy_repl_enabled) {
+	// 	for (i = 0; i < NR_MM_COUNTERS; i++) {
+	// 		long x = atomic_long_read(&mm->rss_stat.count[i]);
+
+	// 		printk("rss-counter state before mmdrop is mm:%p idx:%d val:%ld\n", mm, i, x);
+	// 	}
+	// }
 
 	uprobe_clear_state(mm);
 	exit_aio(mm);
@@ -1583,6 +1626,10 @@ static int copy_mm(u64 clone_flags, struct task_struct *tsk)
 		mm = dup_mm(tsk, current->mm);
 		if (!mm)
 			return -ENOMEM;
+		if (oldmm->lazy_repl_enabled)
+			hydra_enable_replication(mm);
+		else if (sysctl_hydra_auto_enable && !(tsk->flags & PF_KTHREAD) && num_online_nodes() >= 2)
+			hydra_enable_replication(mm);
 	}
 
 	tsk->mm = mm;
@@ -2223,6 +2270,11 @@ __latent_entropy struct task_struct *copy_process(
 	retval = copy_mm(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_signal;
+		
+#ifdef CONFIG_X86
+	p->hydra_fault_target_node = -1;
+#endif	
+		
 	retval = copy_namespaces(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_mm;
