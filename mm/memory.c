@@ -8402,24 +8402,50 @@ void vma_pgtable_walk_end(struct vm_area_struct *vma)
 		hugetlb_vma_unlock_read(vma);
 }
 
-int __repl_pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address, size_t nid, size_t owner_node)
+int __repl_pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address,
+                     size_t nid, size_t owner_node)
 {
 	spinlock_t *ptl;
-	pmd_t *new = pmd_alloc_one(mm, address);
-	struct ptdesc *ptdesc;
+	pmd_t *new;
+	struct page *new_page, *master_pmd_page = NULL;
+	pgd_t *m_pgd;
+	p4d_t *m_p4d;
+	pud_t *m_pud;
+	pmd_t *m_pmd;
 
+	new = repl_pmd_alloc_one(mm, address, nid, owner_node);
 	if (!new)
 		return -ENOMEM;
 
+	new_page = virt_to_page(new);
 	smp_wmb();
 
 	ptl = pud_lock(mm, pud);
 	if (!pud_present(*pud)) {
 		mm_inc_nr_pmds(mm);
 		pud_populate(mm, pud, new);
+
+		m_pgd = pgd_offset_pgd(mm->repl_pgd[owner_node], address);
+		if (!pgd_none(*m_pgd) && !pgd_bad(*m_pgd)) {
+			m_p4d = p4d_offset(m_pgd, address);
+			if (!p4d_none(*m_p4d) && !p4d_bad(*m_p4d)) {
+				m_pud = pud_offset(m_p4d, address);
+				if (!pud_none(*m_pud) && !pud_bad(*m_pud)) {
+					m_pmd = pmd_offset(m_pud, address);
+					if (virt_addr_valid(m_pmd))
+						master_pmd_page = virt_to_page(m_pmd);
+				}
+			}
+		}
+		if (master_pmd_page && master_pmd_page != new_page)
+			hydra_link_page_to_replica_chain(master_pmd_page, new_page);
 	} else {
-		ptdesc = virt_to_ptdesc(new);
-		pagetable_dtor_free(ptdesc);
+		struct ptdesc *ptdesc = virt_to_ptdesc(new);
+		pagetable_dtor(ptdesc);
+		new_page->next_replica = NULL;
+		ClearPageHydraFromCache(new_page);
+		if (!hydra_cache_push(new_page, nid, HYDRA_CACHE_PMD))
+			__free_page(new_page);
 	}
 	spin_unlock(ptl);
 	return 0;
