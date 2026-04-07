@@ -923,7 +923,9 @@ struct folio *folio_walk_start(struct folio_walk *fw,
 	if (WARN_ON_ONCE(addr < vma->vm_start || addr >= vma->vm_end))
 		goto not_found;
 
-	pgdp = pgd_offset(vma->vm_mm, addr);
+	pgdp = vma->vm_mm->lazy_repl_enabled
+		? pgd_offset_node(vma->vm_mm, addr, vma->master_pgd_node)
+		: pgd_offset(vma->vm_mm, addr);
 	if (pgd_none_or_clear_bad(pgdp))
 		goto not_found;
 
