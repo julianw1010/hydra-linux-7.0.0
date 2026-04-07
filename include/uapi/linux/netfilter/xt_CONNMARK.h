@@ -4,6 +4,8 @@
 
 #include <linux/netfilter/xt_CONNMARK.h>
 
+#include <linux/types.h>
+
 enum {
 	XT_CONNMARK_SET,
 	XT_CONNMARK_SAVE,

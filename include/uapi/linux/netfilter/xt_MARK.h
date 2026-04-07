@@ -2,6 +2,8 @@
 #ifndef _XT_MARK_H_target
 #define _XT_MARK_H_target
 
+#include <linux/types.h>
+
 #include <linux/netfilter/xt_MARK.h>
 
 struct xt_mark_info {
