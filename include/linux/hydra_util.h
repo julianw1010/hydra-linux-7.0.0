@@ -288,7 +288,8 @@ static inline int hydra_calculate_tlbflush_nodemask(struct page *const ptpage, n
 		return hydra_collect_repl_nodes(ptpage, nodemask);
 	case 3:
 		if (ptpage->next_replica && ptpage->next_replica != ptpage) {
-			nodes_setall(*nodemask);
+			nodes_clear(*nodemask);
+			nodes_or(*nodemask, *nodemask, node_online_map);
 		}
 		return 0;
 	}
