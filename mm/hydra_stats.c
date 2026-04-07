@@ -836,159 +836,315 @@ next_pgd:
 	} while (r_pgd++, addr != end);
 }
 
+struct hydra_verify_stats {
+	bool inv1_pass;
+	bool inv2_pass;
+	bool inv3_pass;
+	int inv1_missing;
+	unsigned long inv2_total_checked;
+	unsigned long inv2_total_violations;
+	unsigned long inv3_total_checked;
+	unsigned long inv3_total_violations;
+	int inv2_nodes_checked;
+	int inv3_nodes_checked;
+	unsigned long inv2_node_checked[NUMA_NODE_COUNT];
+	unsigned long inv2_node_violations[NUMA_NODE_COUNT];
+	unsigned long inv3_node_checked[NUMA_NODE_COUNT];
+	unsigned long inv3_node_violations[NUMA_NODE_COUNT];
+};
+
+static void hydra_verify_print_header(struct seq_file *m, int nr_online)
+{
+	seq_printf(m,
+		"======================================================\n"
+		"               HYDRA VERIFICATION REPORT               \n"
+		"======================================================\n\n");
+
+	if (!sysctl_hydra_verify_enabled) {
+		seq_printf(m, "  Status:         DISABLED\n\n");
+		seq_printf(m, "  Fault-time consistency checks are off.\n");
+		seq_printf(m, "  Enable with:    echo 1 > /proc/hydra/verify\n");
+		seq_printf(m, "  Disable with:   echo 0 > /proc/hydra/verify\n\n");
+		return;
+	}
+
+	seq_printf(m, "  Status:         ENABLED\n");
+	seq_printf(m, "  Online nodes:   %d\n\n", nr_online);
+	seq_printf(m, "  Invariants\n");
+	seq_printf(m, "    INV1  every online node has a replica PGD\n");
+	seq_printf(m, "    INV2  every page-table page lives on its owning node\n");
+	seq_printf(m, "    INV3  every replica PTE has a corresponding master PTE\n\n");
+}
+
+static void hydra_verify_collect(struct seq_file *m, struct mm_struct *mm,
+				 int nr_online, int *online_nodes,
+				 struct hydra_verify_stats *s)
+{
+	int i;
+
+	memset(s, 0, sizeof(*s));
+	s->inv1_pass = true;
+	s->inv2_pass = true;
+	s->inv3_pass = true;
+
+	for (i = 0; i < nr_online; i++) {
+		if (!mm->repl_pgd[online_nodes[i]]) {
+			s->inv1_pass = false;
+			s->inv1_missing++;
+		}
+	}
+
+	for (i = 0; i < nr_online; i++) {
+		int n = online_nodes[i];
+
+		if (!mm->repl_pgd[n])
+			continue;
+
+		verify_replica_walk(m, mm, n,
+				    &s->inv2_node_violations[n],
+				    &s->inv2_node_checked[n]);
+		s->inv2_total_checked += s->inv2_node_checked[n];
+		s->inv2_total_violations += s->inv2_node_violations[n];
+		s->inv2_nodes_checked++;
+		if (s->inv2_node_violations[n])
+			s->inv2_pass = false;
+	}
+
+	for (i = 0; i < nr_online; i++) {
+		int n = online_nodes[i];
+		struct vm_area_struct *vma;
+		VMA_ITERATOR(vmi, mm, 0);
+
+		if (!mm->repl_pgd[n] || mm->repl_pgd[n] == mm->pgd)
+			continue;
+
+		for_each_vma(vmi, vma) {
+			if (n == vma->master_pgd_node)
+				continue;
+			verify_master_has_mapping(m, mm, vma, n,
+						  vma->master_pgd_node,
+						  &s->inv3_node_violations[n],
+						  &s->inv3_node_checked[n]);
+		}
+
+		s->inv3_total_checked += s->inv3_node_checked[n];
+		s->inv3_total_violations += s->inv3_node_violations[n];
+		s->inv3_nodes_checked++;
+		if (s->inv3_node_violations[n])
+			s->inv3_pass = false;
+	}
+}
+
+static void hydra_verify_print_invariant_row(struct seq_file *m,
+					     const char *name, const char *desc,
+					     bool pass,
+					     unsigned long violations,
+					     unsigned long checked)
+{
+	seq_printf(m, "    %-5s %-27s %s",
+		   name, desc, pass ? "[ OK ]" : "[FAIL]");
+	if (checked > 0 || violations > 0)
+		seq_printf(m, "  %lu bad / %lu checked", violations, checked);
+	seq_printf(m, "\n");
+}
+
+static void hydra_verify_print_node_table(struct seq_file *m,
+					  int nr_online, int *online_nodes,
+					  struct hydra_verify_stats *s)
+{
+	int i;
+
+	seq_printf(m, "\n    Per-node breakdown\n");
+	seq_printf(m, "    %4s %10s %10s  %10s %10s\n",
+		   "Node", "INV2 chk", "INV2 bad", "INV3 chk", "INV3 bad");
+	seq_printf(m, "    ---- ---------- ----------  ---------- ----------\n");
+	for (i = 0; i < nr_online; i++) {
+		int n = online_nodes[i];
+		seq_printf(m, "    %4d %10lu %10lu  %10lu %10lu\n",
+			   n,
+			   s->inv2_node_checked[n],
+			   s->inv2_node_violations[n],
+			   s->inv3_node_checked[n],
+			   s->inv3_node_violations[n]);
+	}
+	seq_printf(m, "\n");
+}
+
+static void hydra_verify_print_bars(struct seq_file *m, const char *label,
+				    int nr_online, int *online_nodes,
+				    unsigned long *checked,
+				    unsigned long *violations)
+{
+	unsigned long max = 0;
+	int i, j;
+
+	for (i = 0; i < nr_online; i++) {
+		unsigned long c = checked[online_nodes[i]];
+		if (c > max)
+			max = c;
+	}
+
+	if (max == 0)
+		return;
+
+	seq_printf(m, "    %s coverage\n", label);
+	for (i = 0; i < nr_online; i++) {
+		int n = online_nodes[i];
+		unsigned long cnt = checked[n];
+		int bar_len = (int)((cnt * 30) / max);
+
+		seq_printf(m, "    n%-2d %10lu  ", n, cnt);
+		for (j = 0; j < bar_len; j++)
+			seq_printf(m, "#");
+		if (violations[n])
+			seq_printf(m, "  (!%lu)", violations[n]);
+		seq_printf(m, "\n");
+	}
+	seq_printf(m, "\n");
+}
+
+static void hydra_verify_print_process(struct seq_file *m,
+				       struct task_struct *task,
+				       int nr_online, int *online_nodes,
+				       struct hydra_verify_stats *s)
+{
+	bool all_pass = s->inv1_pass && s->inv2_pass && s->inv3_pass;
+
+	seq_printf(m,
+		"  +--------------------------------------------------+\n");
+	seq_printf(m,
+		"  | %-16s  PID %-6d  %-18s |\n",
+		task->comm, task->pid, all_pass ? "[ ALL PASS ]" : "[ FAILURES ]");
+	seq_printf(m,
+		"  +--------------------------------------------------+\n");
+
+	hydra_verify_print_invariant_row(m, "INV1", "replica PGDs present",
+					 s->inv1_pass, s->inv1_missing,
+					 nr_online);
+	hydra_verify_print_invariant_row(m, "INV2", "page-table locality",
+					 s->inv2_pass,
+					 s->inv2_total_violations,
+					 s->inv2_total_checked);
+	hydra_verify_print_invariant_row(m, "INV3", "master coverage",
+					 s->inv3_pass,
+					 s->inv3_total_violations,
+					 s->inv3_total_checked);
+
+	hydra_verify_print_node_table(m, nr_online, online_nodes, s);
+	hydra_verify_print_bars(m, "INV2", nr_online, online_nodes,
+				s->inv2_node_checked, s->inv2_node_violations);
+	hydra_verify_print_bars(m, "INV3", nr_online, online_nodes,
+				s->inv3_node_checked, s->inv3_node_violations);
+}
+
+static void hydra_verify_print_summary(struct seq_file *m,
+				       int total_checked, int total_passed,
+				       int total_failed, int total_skipped,
+				       unsigned long inv1_missing,
+				       unsigned long inv2_checked,
+				       unsigned long inv2_violations,
+				       unsigned long inv3_checked,
+				       unsigned long inv3_violations)
+{
+	seq_printf(m,
+		"------------------------------------------------------\n"
+		"  GLOBAL SUMMARY\n"
+		"------------------------------------------------------\n");
+	seq_printf(m, "  Processes checked:   %d\n", total_checked);
+	seq_printf(m, "  Passed:              %d\n", total_passed);
+	seq_printf(m, "  Failed:              %d\n", total_failed);
+	seq_printf(m, "  Skipped (locked):    %d\n\n", total_skipped);
+	seq_printf(m, "  INV1 missing PGDs:   %lu\n", inv1_missing);
+	seq_printf(m, "  INV2 pages checked:  %lu  (violations: %lu)\n",
+		   inv2_checked, inv2_violations);
+	seq_printf(m, "  INV3 PTEs checked:   %lu  (violations: %lu)\n\n",
+		   inv3_checked, inv3_violations);
+
+	if (total_failed == 0 && total_checked > 0)
+		seq_printf(m, "  Result:              ALL PASS\n\n");
+	else if (total_checked == 0)
+		seq_printf(m, "  Result:              NO HYDRA PROCESSES\n\n");
+	else
+		seq_printf(m, "  Result:              %d FAILURE(S)\n\n",
+			   total_failed);
+
+	seq_printf(m,
+		"======================================================\n");
+}
+
 static int hydra_verify_show(struct seq_file *m, void *v)
 {
 	struct task_struct *task;
-	int i, total_checked = 0, total_passed = 0;
+	int i, nr_online = 0;
+	int online_nodes[NUMA_NODE_COUNT];
+	int total_checked = 0, total_passed = 0;
+	int total_failed = 0, total_skipped = 0;
+	unsigned long g_inv1_missing = 0;
+	unsigned long g_inv2_checked = 0, g_inv2_violations = 0;
+	unsigned long g_inv3_checked = 0, g_inv3_violations = 0;
+
+	for (i = 0; i < NUMA_NODE_COUNT; i++) {
+		if (node_online(i))
+			online_nodes[nr_online++] = i;
+	}
+
+	hydra_verify_print_header(m, nr_online);
 
 	if (!sysctl_hydra_verify_enabled) {
-		seq_printf(m, "Fault-time verification: disabled\n");
-		seq_printf(m, "Write 1 to enable, 0 to disable.\n");
+		seq_printf(m,
+			"======================================================\n");
 		return 0;
 	}
 
-	seq_printf(m, "Fault-time verification: enabled\n\n");
-
 	rcu_read_lock();
 	for_each_process(task) {
-		struct mm_struct *mm;
-		bool inv1_pass, inv2_pass, inv3_pass;
-		int inv1_missing, online_nodes[NUMA_NODE_COUNT], nr_online;
-		unsigned long inv2_total_checked, inv2_total_violations;
-		unsigned long inv3_total_checked, inv3_total_violations;
-		int inv2_nodes_checked, inv3_nodes_checked;
-		unsigned long inv2_node_violations[NUMA_NODE_COUNT] = {};
-		unsigned long inv2_node_checked[NUMA_NODE_COUNT] = {};
-		unsigned long inv3_node_violations[NUMA_NODE_COUNT] = {};
-		unsigned long inv3_node_checked[NUMA_NODE_COUNT] = {};
+		struct mm_struct *mm = task->mm;
+		struct hydra_verify_stats s;
 
-		mm = task->mm;
 		if (!mm || !READ_ONCE(mm->lazy_repl_enabled))
 			continue;
 
 		total_checked++;
-		nr_online = 0;
-		for (i = 0; i < NUMA_NODE_COUNT; i++) {
-			if (node_online(i))
-				online_nodes[nr_online++] = i;
-		}
-
 		rcu_read_unlock();
 
-		inv1_pass = true;
-		inv1_missing = 0;
-		for (i = 0; i < nr_online; i++) {
-			if (!mm->repl_pgd[online_nodes[i]]) {
-				inv1_pass = false;
-				inv1_missing++;
-			}
+		if (!mmap_read_trylock(mm)) {
+			seq_printf(m,
+				"  +--------------------------------------------------+\n");
+			seq_printf(m,
+				"  | %-16s  PID %-6d  %-18s |\n",
+				task->comm, task->pid, "[ SKIP: locked ]");
+			seq_printf(m,
+				"  +--------------------------------------------------+\n\n");
+			total_skipped++;
+			rcu_read_lock();
+			continue;
 		}
 
-		inv2_pass = true;
-		inv3_pass = true;
-		inv2_total_checked = 0;
-		inv2_total_violations = 0;
-		inv2_nodes_checked = 0;
-		inv3_total_checked = 0;
-		inv3_total_violations = 0;
-		inv3_nodes_checked = 0;
+		hydra_verify_collect(m, mm, nr_online, online_nodes, &s);
+		mmap_read_unlock(mm);
 
-		if (mmap_read_trylock(mm)) {
-			for (i = 0; i < nr_online; i++) {
-				int n = online_nodes[i];
+		g_inv1_missing += s.inv1_missing;
+		g_inv2_checked += s.inv2_total_checked;
+		g_inv2_violations += s.inv2_total_violations;
+		g_inv3_checked += s.inv3_total_checked;
+		g_inv3_violations += s.inv3_total_violations;
 
-				if (!mm->repl_pgd[n])
-					continue;
+		hydra_verify_print_process(m, task, nr_online, online_nodes, &s);
 
-				verify_replica_walk(m, mm, n,
-						    &inv2_node_violations[n],
-						    &inv2_node_checked[n]);
-				inv2_total_checked += inv2_node_checked[n];
-				inv2_total_violations += inv2_node_violations[n];
-				inv2_nodes_checked++;
-				if (inv2_node_violations[n])
-					inv2_pass = false;
-			}
-
-			for (i = 0; i < nr_online; i++) {
-				int n = online_nodes[i];
-				struct vm_area_struct *vma;
-				VMA_ITERATOR(vmi, mm, 0);
-
-				if (!mm->repl_pgd[n] || mm->repl_pgd[n] == mm->pgd)
-					continue;
-
-				for_each_vma(vmi, vma) {
-					if (n == vma->master_pgd_node)
-						continue;
-					verify_master_has_mapping(m, mm, vma, n,
-								  vma->master_pgd_node,
-								  &inv3_node_violations[n],
-								  &inv3_node_checked[n]);
-				}
-
-				inv3_total_checked += inv3_node_checked[n];
-				inv3_total_violations += inv3_node_violations[n];
-				inv3_nodes_checked++;
-				if (inv3_node_violations[n])
-					inv3_pass = false;
-			}
-
-			mmap_read_unlock(mm);
-
-			seq_printf(m, "%-20s  PID %-6d  ", task->comm, task->pid);
-
-			if (inv1_pass && inv2_pass && inv3_pass) {
-				seq_printf(m, "ALL PASS");
-				seq_printf(m, "  [locality: %lu/%d nodes]",
-					   inv2_total_checked, inv2_nodes_checked);
-				seq_printf(m, "  [master: %lu/%d replicas]\n",
-					   inv3_total_checked, inv3_nodes_checked);
-				total_passed++;
-			} else {
-				seq_printf(m, "FAIL\n");
-
-				if (!inv1_pass)
-					seq_printf(m, "    INV1 FAIL: %d nodes missing PGD\n",
-						   inv1_missing);
-
-				if (!inv2_pass) {
-					seq_printf(m, "    INV2 FAIL: %lu locality violations in %lu checks\n",
-						   inv2_total_violations, inv2_total_checked);
-					for (i = 0; i < nr_online; i++) {
-						int n = online_nodes[i];
-						if (inv2_node_violations[n])
-							seq_printf(m, "      node %d: %lu violations / %lu checked\n",
-								   n, inv2_node_violations[n],
-								   inv2_node_checked[n]);
-					}
-				}
-
-				if (!inv3_pass) {
-					seq_printf(m, "    INV3 FAIL: %lu master-missing violations in %lu checks\n",
-						   inv3_total_violations, inv3_total_checked);
-					for (i = 0; i < nr_online; i++) {
-						int n = online_nodes[i];
-						if (inv3_node_violations[n])
-							seq_printf(m, "      node %d: %lu violations / %lu checked\n",
-								   n, inv3_node_violations[n],
-								   inv3_node_checked[n]);
-					}
-				}
-			}
-		} else {
-			seq_printf(m, "%-20s  PID %-6d  SKIP (lock busy)\n",
-				   task->comm, task->pid);
+		if (s.inv1_pass && s.inv2_pass && s.inv3_pass)
 			total_passed++;
-		}
+		else
+			total_failed++;
 
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
 
-	seq_printf(m, "\n%d processes checked, %d passed, %d failed\n",
-		   total_checked, total_passed, total_checked - total_passed);
-
+	hydra_verify_print_summary(m, total_checked, total_passed,
+				   total_failed, total_skipped,
+				   g_inv1_missing,
+				   g_inv2_checked, g_inv2_violations,
+				   g_inv3_checked, g_inv3_violations);
 	return 0;
 }
 
