@@ -2077,7 +2077,6 @@ struct numa_check_stats {
 	unsigned long err_protnone_missing;
 	unsigned long err_pfn_diverged;
 	unsigned long err_accessed_lost;
-	unsigned long err_dirty_lost;
 	unsigned long err_write_excess;
 	unsigned long err_replica_protnone_loop;
 };
@@ -2184,9 +2183,6 @@ static void numa_check_pte_range(struct seq_file *m,
 				   "master(n%d) RO replica(n%d) RW\n",
 				   a, master_node, replica_node);
 		}
-
-		if (pte_dirty(m_val) && !pte_dirty(r_val))
-			stats->err_dirty_lost++;
 	}
 }
 
@@ -2290,9 +2286,6 @@ static void numa_check_one_vma(struct seq_file *m,
 								   "replica(n%d) RW\n",
 								   addr, master_node, replica_node);
 						}
-
-						if (pmd_dirty(m_pmdval) && !pmd_dirty(r_pmdval))
-							stats->err_dirty_lost++;
 
 						goto next_pmd;
 					}
@@ -2414,7 +2407,6 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 				total.err_protnone_missing += per_pair.err_protnone_missing;
 				total.err_pfn_diverged += per_pair.err_pfn_diverged;
 				total.err_accessed_lost += per_pair.err_accessed_lost;
-				total.err_dirty_lost += per_pair.err_dirty_lost;
 				total.err_write_excess += per_pair.err_write_excess;
 				total.err_replica_protnone_loop += per_pair.err_replica_protnone_loop;
 			}
@@ -2447,15 +2439,11 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 	seq_printf(m, "ERR write_excess:             %lu  "
 		   "(replica writable, master not)\n",
 		   total.err_write_excess);
-	seq_printf(m, "ERR dirty_lost:               %lu  "
-		   "(master dirty, replica clean)\n",
-		   total.err_dirty_lost);
 
 	total_errors = total.err_protnone_stale +
 		       total.err_protnone_missing +
 		       total.err_pfn_diverged +
 		       total.err_write_excess +
-		       total.err_dirty_lost +
 		       total.err_replica_protnone_loop;
 
 	if (total_errors == 0)
