@@ -6537,6 +6537,8 @@ static int find_pte_in_master(struct mm_struct *mm, unsigned long address, int m
 		return 4;
 
 	ptep = pte_offset_map_lock(mm, pmd, address, &ptl);
+	if (!ptep)
+		return 6;
 	if (!pte_present(*ptep))
 		is_pte_present = false;
 	*pte_origp = *ptep;
