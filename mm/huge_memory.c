@@ -1780,7 +1780,7 @@ bool touch_pmd(struct vm_area_struct *vma, unsigned long addr,
 {
 	pmd_t entry;
 
-	entry = pmd_mkyoung(*pmd);
+	entry = pmd_mkyoung(hydra_get_pmd(pmd));
 	if (write)
 		entry = pmd_mkdirty(entry);
 	if (pmdp_set_access_flags(vma, addr & HPAGE_PMD_MASK,
@@ -2197,7 +2197,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	int orig_nid = NUMA_NO_NODE;
 
 	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
-	old_pmd = pmdp_get(vmf->pmd);
+	old_pmd = hydra_get_pmd(vmf->pmd);
 
 	if (unlikely(!pmd_same(old_pmd, vmf->orig_pmd))) {
 		spin_unlock(vmf->ptl);
@@ -2253,7 +2253,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	}
 out_map:
 	/* Restore the PMD */
-	pmd = pmd_modify(pmdp_get(vmf->pmd), vma->vm_page_prot);
+	pmd = pmd_modify(hydra_get_pmd(vmf->pmd), vma->vm_page_prot);
 	pmd = pmd_mkyoung(pmd);
 	if (writable)
 		pmd = pmd_mkwrite(pmd, vma);
