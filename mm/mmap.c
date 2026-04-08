@@ -1381,7 +1381,30 @@ void exit_mmap(struct mm_struct *mm)
 	unmap.mm_wr_locked = true;
 	mt_clear_in_rcu(&mm->mm_mt);
 	unmap_pgtable_init(&unmap, &vmi);
-	free_pgtables(&tlb, &unmap);
+	
+	if (mm->lazy_repl_enabled) {
+	    struct vm_area_struct *v;
+	    struct unlink_vma_file_batch vb;
+	    int i;
+	    VMA_ITERATOR(vmi2, mm, 0);
+
+	    unlink_file_vma_batch_init(&vb);
+	    for_each_vma(vmi2, v) {
+		vma_start_write(v);
+		unlink_anon_vmas(v);
+		unlink_file_vma_batch_add(&vb, v);
+	    }
+	    unlink_file_vma_batch_final(&vb);
+
+	    for (i = 0; i < NUMA_NODE_COUNT; i++) {
+		if (!mm->repl_pgd[i])
+		    continue;
+		hydra_free_pgd_tree(&tlb, mm->repl_pgd[i]);
+	    }
+	} else {
+	    free_pgtables(&tlb, &unmap);
+	}
+	
 	tlb_finish_mmu(&tlb);
 
 	if (mm->lazy_repl_enabled) {
