@@ -172,7 +172,7 @@ arch_get_unmapped_area_topdown(struct file *filp, unsigned long addr0,
 	struct mm_struct *mm = current->mm;
 	unsigned long addr = addr0;
 	struct vm_unmapped_area_info info = {};
-	const unsigned long mask_1g = ((1ul << 30) - 1ul) & PAGE_MASK;
+	const unsigned long mask_pmd = (PMD_SIZE - 1ul) & PAGE_MASK;
 	int segregate = current->mm->lazy_repl_enabled;
 
 	/* requested length too big for entire address space */
@@ -229,8 +229,8 @@ get_unmapped_area:
 		info.align_mask = get_align_mask(filp);
 		info.align_offset += get_align_bits();
 	}
-	if (segregate && info.align_mask < mask_1g) {
-		info.align_mask = mask_1g;
+	if (segregate && info.align_mask < mask_pmd) {
+		info.align_mask = mask_pmd;
 	}
 	addr = vm_unmapped_area(&info);
 	if (!(addr & ~PAGE_MASK))
