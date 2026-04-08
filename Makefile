@@ -2,7 +2,7 @@
 VERSION = 7
 PATCHLEVEL = 0
 SUBLEVEL = 0
-EXTRAVERSION = -rc6-hydra
+EXTRAVERSION = -rc7-hydra
 NAME = Baby Opossum Posse
 
 # *DOCUMENTATION*
