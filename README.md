@@ -4,7 +4,7 @@ A Linux 7.0 kernel patch that replicates user-space page tables across NUMA node
 
 ## About This Fork
 
-This repository contains a substantially bugfixed and extended reimplementation of Hydra, rebased onto Linux 7.0 (7.0.0-rc6). It is derived from, and should be distinguished from, the original Hydra prototype published alongside the USENIX ATC '24 paper.
+This repository contains a substantially bugfixed and extended reimplementation of Hydra, rebased onto Linux 7.0 (7.0.0-rc7). It is derived from, and should be distinguished from, the original Hydra prototype published alongside the USENIX ATC '24 paper.
 
 **Original paper:**
 Gao, B., Kang, Q., Tee, H.-W., Chu, K. T. N., Sanaee, A., and Jevdjic, D. *Scalable and Effective Page-table and TLB Management on NUMA Systems.* In Proceedings of the 2024 USENIX Annual Technical Conference (USENIX ATC '24), pp. 445-461. https://www.usenix.org/conference/atc24/presentation/gao-bin-scalable
@@ -135,7 +135,7 @@ After running `prepare.sh`, build the kernel:
 make -j$(nproc)
 ```
 
-The resulting kernel identifies as `7.0.0-rc6-hydra`.
+The resulting kernel identifies as `7.0.0-rc7-hydra`.
 
 ## Installation
 
