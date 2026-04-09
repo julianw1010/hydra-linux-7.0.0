@@ -533,12 +533,7 @@ int pmdp_set_access_flags(struct vm_area_struct *vma,
 		changed |= !pmd_same(old_repl, entry);
 
 		if (dirty) {
-			pmdval_t repl_ad = pmd_val(old_repl) &
-					   (_PAGE_ACCESSED | _PAGE_DIRTY);
-			pmdval_t new_val = (pmd_val(entry) &
-					    ~(_PAGE_ACCESSED | _PAGE_DIRTY)) |
-					   repl_ad;
-			native_set_pmd(replica_pmdp, __pmd(new_val));
+			native_set_pmd(replica_pmdp, pmd_mkold(entry));
 		}
 	}
 
