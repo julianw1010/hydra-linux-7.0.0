@@ -12,6 +12,29 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
+static inline void hydra_pt_inc(atomic_long_t *cur, atomic_long_t *max)
+{
+	long new_val, old_max;
+
+	if (!cur || !max)
+		return;
+
+	new_val = atomic_long_inc_return(cur);
+
+	old_max = atomic_long_read(max);
+	while (new_val > old_max) {
+		if (atomic_long_try_cmpxchg(max, &old_max, new_val))
+			break;
+	}
+}
+
+static inline void hydra_pt_dec(atomic_long_t *cur)
+{
+	if (!cur)
+		return;
+	atomic_long_dec(cur);
+}
+
 extern int hydra_stats_init(void);
 void hydra_verify_fault_walk(struct mm_struct *mm, unsigned long address);
 extern int sysctl_hydra_verify_enabled;

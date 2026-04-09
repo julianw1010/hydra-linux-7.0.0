@@ -1106,7 +1106,22 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	atomic_long_set(&mm->hydra_repl_pte_faults, 0);
 	atomic_long_set(&mm->hydra_repl_ptes_copied, 0);
 	atomic_long_set(&mm->hydra_repl_hugepmd_faults, 0);	
-	atomic_long_set(&mm->hydra_repl_hugepmd_copied, 0);	
+	atomic_long_set(&mm->hydra_repl_hugepmd_copied, 0);
+	{
+		int n;
+		for (n = 0; n < NUMA_NODE_COUNT; n++) {
+			atomic_long_set(&mm->hydra_nr_pgd[n], 0);
+			atomic_long_set(&mm->hydra_nr_p4d[n], 0);
+			atomic_long_set(&mm->hydra_nr_pud[n], 0);
+			atomic_long_set(&mm->hydra_nr_pmd[n], 0);
+			atomic_long_set(&mm->hydra_nr_pte[n], 0);
+			atomic_long_set(&mm->hydra_max_pgd[n], 0);
+			atomic_long_set(&mm->hydra_max_p4d[n], 0);
+			atomic_long_set(&mm->hydra_max_pud[n], 0);
+			atomic_long_set(&mm->hydra_max_pmd[n], 0);
+			atomic_long_set(&mm->hydra_max_pte[n], 0);
+		}
+	}
 	{
 		int src, dst;
 		for (src = 0; src < NUMA_NODE_COUNT; src++)

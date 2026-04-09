@@ -42,6 +42,10 @@ struct hydra_history_entry {
 	long hugepmd_faults;
 	long hugepmd_copied;
 	long migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	long nr_pgd[NUMA_NODE_COUNT], nr_p4d[NUMA_NODE_COUNT];
+	long nr_pud[NUMA_NODE_COUNT], nr_pmd[NUMA_NODE_COUNT], nr_pte[NUMA_NODE_COUNT];
+	long max_pgd[NUMA_NODE_COUNT], max_p4d[NUMA_NODE_COUNT];
+	long max_pud[NUMA_NODE_COUNT], max_pmd[NUMA_NODE_COUNT], max_pte[NUMA_NODE_COUNT];
 };
 
 static LIST_HEAD(hydra_history_list);
@@ -52,7 +56,7 @@ void hydra_record_exit(struct mm_struct *mm, const char *comm, pid_t pid)
 {
 	unsigned long flags;
 	struct hydra_history_entry *e;
-	int src, dst;
+	int src, dst, n;
 
 	if (!mm->lazy_repl_enabled)
 		return;
@@ -72,6 +76,19 @@ void hydra_record_exit(struct mm_struct *mm, const char *comm, pid_t pid)
 	e->ptes_copied = atomic_long_read(&mm->hydra_repl_ptes_copied);
 	e->hugepmd_faults = atomic_long_read(&mm->hydra_repl_hugepmd_faults);
 	e->hugepmd_copied = atomic_long_read(&mm->hydra_repl_hugepmd_copied);
+
+	for (n = 0; n < NUMA_NODE_COUNT; n++) {
+		e->nr_pgd[n] = atomic_long_read(&mm->hydra_nr_pgd[n]);
+		e->nr_p4d[n] = atomic_long_read(&mm->hydra_nr_p4d[n]);
+		e->nr_pud[n] = atomic_long_read(&mm->hydra_nr_pud[n]);
+		e->nr_pmd[n] = atomic_long_read(&mm->hydra_nr_pmd[n]);
+		e->nr_pte[n] = atomic_long_read(&mm->hydra_nr_pte[n]);
+		e->max_pgd[n] = atomic_long_read(&mm->hydra_max_pgd[n]);
+		e->max_p4d[n] = atomic_long_read(&mm->hydra_max_p4d[n]);
+		e->max_pud[n] = atomic_long_read(&mm->hydra_max_pud[n]);
+		e->max_pmd[n] = atomic_long_read(&mm->hydra_max_pmd[n]);
+		e->max_pte[n] = atomic_long_read(&mm->hydra_max_pte[n]);
+	}
 
 	for (src = 0; src < NUMA_NODE_COUNT; src++)
 		for (dst = 0; dst < NUMA_NODE_COUNT; dst++)
@@ -499,6 +516,49 @@ static void hydra_status_print_mm_counters(struct seq_file *m,
 	seq_printf(m, "    %16ld %16ld\n\n", pt_bytes, pt_bytes / 1024);
 }
 
+static void hydra_status_print_pt_counts(struct seq_file *m,
+					 int nr_online, int *online_nodes,
+					 const long *nr_pgd, const long *nr_p4d,
+					 const long *nr_pud, const long *nr_pmd,
+					 const long *nr_pte,
+					 const long *max_pgd, const long *max_p4d,
+					 const long *max_pud, const long *max_pmd,
+					 const long *max_pte,
+					 bool show_max)
+{
+	const long *rows[5];
+	const char *names[5] = { "PGD", "P4D", "PUD", "PMD", "PTE" };
+	int i, r;
+
+	if (show_max) {
+		rows[0] = max_pgd; rows[1] = max_p4d; rows[2] = max_pud;
+		rows[3] = max_pmd; rows[4] = max_pte;
+		seq_printf(m, "    Page Table Counts (max) per node\n");
+	} else {
+		rows[0] = nr_pgd; rows[1] = nr_p4d; rows[2] = nr_pud;
+		rows[3] = nr_pmd; rows[4] = nr_pte;
+		seq_printf(m, "    Page Table Counts (current) per node\n");
+	}
+
+	seq_printf(m, "    %5s", "Lvl");
+	for (i = 0; i < nr_online; i++)
+		seq_printf(m, " %14d", online_nodes[i]);
+	seq_printf(m, "\n");
+
+	seq_printf(m, "    -----");
+	for (i = 0; i < nr_online; i++)
+		seq_printf(m, " --------------");
+	seq_printf(m, "\n");
+
+	for (r = 0; r < 5; r++) {
+		seq_printf(m, "    %5s", names[r]);
+		for (i = 0; i < nr_online; i++)
+			seq_printf(m, " %14ld", rows[r][online_nodes[i]]);
+		seq_printf(m, "\n");
+	}
+	seq_printf(m, "\n");
+}
+
 static int hydra_status_show(struct seq_file *m, void *v)
 {
 	struct task_struct *task;
@@ -539,6 +599,30 @@ static int hydra_status_show(struct seq_file *m, void *v)
 		hydra_status_print_vma_dist(m, mm, nr_online, online_nodes);
 		hydra_status_print_migration(m, mm, nr_online, online_nodes);
 		hydra_status_print_mm_counters(m, mm);
+		{
+			long nr_pgd[NUMA_NODE_COUNT], nr_p4d[NUMA_NODE_COUNT];
+			long nr_pud[NUMA_NODE_COUNT], nr_pmd[NUMA_NODE_COUNT], nr_pte[NUMA_NODE_COUNT];
+			long max_pgd[NUMA_NODE_COUNT], max_p4d[NUMA_NODE_COUNT];
+			long max_pud[NUMA_NODE_COUNT], max_pmd[NUMA_NODE_COUNT], max_pte[NUMA_NODE_COUNT];
+			int n;
+
+			for (n = 0; n < NUMA_NODE_COUNT; n++) {
+				nr_pgd[n] = atomic_long_read(&mm->hydra_nr_pgd[n]);
+				nr_p4d[n] = atomic_long_read(&mm->hydra_nr_p4d[n]);
+				nr_pud[n] = atomic_long_read(&mm->hydra_nr_pud[n]);
+				nr_pmd[n] = atomic_long_read(&mm->hydra_nr_pmd[n]);
+				nr_pte[n] = atomic_long_read(&mm->hydra_nr_pte[n]);
+				max_pgd[n] = atomic_long_read(&mm->hydra_max_pgd[n]);
+				max_p4d[n] = atomic_long_read(&mm->hydra_max_p4d[n]);
+				max_pud[n] = atomic_long_read(&mm->hydra_max_pud[n]);
+				max_pmd[n] = atomic_long_read(&mm->hydra_max_pmd[n]);
+				max_pte[n] = atomic_long_read(&mm->hydra_max_pte[n]);
+			}
+			hydra_status_print_pt_counts(m, nr_online, online_nodes,
+						     nr_pgd, nr_p4d, nr_pud, nr_pmd, nr_pte,
+						     max_pgd, max_p4d, max_pud, max_pmd, max_pte,
+						     false);
+		}
 
 		rcu_read_lock();
 	}
@@ -1269,6 +1353,11 @@ static int hydra_history_show(struct seq_file *m, void *v)
 		seq_printf(m, "    %-10s %16ld %16ld %16ld\n\n",
 			   "HugePMD", e->hugepmd_faults, e->hugepmd_copied,
 			   avg_hpmd);
+
+		hydra_status_print_pt_counts(m, nr_online, online_nodes,
+					     e->nr_pgd, e->nr_p4d, e->nr_pud, e->nr_pmd, e->nr_pte,
+					     e->max_pgd, e->max_p4d, e->max_pud, e->max_pmd, e->max_pte,
+					     true);
 
 		for (i = 0; i < nr_online; i++)
 			for (j = 0; j < nr_online; j++)

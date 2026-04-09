@@ -1172,6 +1172,18 @@ struct mm_struct {
 	atomic_long_t hydra_repl_hugepmd_faults;	
 	atomic_long_t hydra_repl_hugepmd_copied;
 	
+	atomic_long_t hydra_nr_pgd[NUMA_NODE_COUNT];
+	atomic_long_t hydra_nr_p4d[NUMA_NODE_COUNT];
+	atomic_long_t hydra_nr_pud[NUMA_NODE_COUNT];
+	atomic_long_t hydra_nr_pmd[NUMA_NODE_COUNT];
+	atomic_long_t hydra_nr_pte[NUMA_NODE_COUNT];
+
+	atomic_long_t hydra_max_pgd[NUMA_NODE_COUNT];
+	atomic_long_t hydra_max_p4d[NUMA_NODE_COUNT];
+	atomic_long_t hydra_max_pud[NUMA_NODE_COUNT];
+	atomic_long_t hydra_max_pmd[NUMA_NODE_COUNT];
+	atomic_long_t hydra_max_pte[NUMA_NODE_COUNT];
+	
 	atomic_long_t hydra_migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
 	
 	pgd_t * repl_pgd[NUMA_NODE_COUNT];

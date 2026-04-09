@@ -33,6 +33,8 @@ static inline pte_t *__pte_alloc_one_kernel_noprof(struct mm_struct *mm)
 			}
 			ptdesc_set_kernel(ptdesc);
 			page->pt_owner_mm = mm;
+			hydra_pt_inc(&mm->hydra_nr_pte[page_to_nid(page)],
+				     &mm->hydra_max_pte[page_to_nid(page)]);
 			return ptdesc_address(ptdesc);
 		}
 
@@ -51,9 +53,10 @@ static inline pte_t *__pte_alloc_one_kernel_noprof(struct mm_struct *mm)
 		pagetable_free(ptdesc);
 		return NULL;
 	}
-
 	ptdesc_set_kernel(ptdesc);
 	page->pt_owner_mm = mm;
+	hydra_pt_inc(&mm->hydra_nr_pte[page_to_nid(page)],
+		     &mm->hydra_max_pte[page_to_nid(page)]);
 	return ptdesc_address(ptdesc);
 }
 #define __pte_alloc_one_kernel(...)	alloc_hooks(__pte_alloc_one_kernel_noprof(__VA_ARGS__))
@@ -72,6 +75,9 @@ static inline void pte_free_kernel(struct mm_struct *mm, pte_t *pte)
 	struct page *page = ptdesc_page(ptdesc);
 	int nid = page_to_nid(page);
 	bool from_cache = PageHydraFromCache(page);
+
+	if (page->pt_owner_mm)
+		hydra_pt_dec(&page->pt_owner_mm->hydra_nr_pte[nid]);
 
 	hydra_break_chain(page);
 	pagetable_dtor(ptdesc);
@@ -106,6 +112,8 @@ static inline pgtable_t __pte_alloc_one_noprof(struct mm_struct *mm, gfp_t gfp)
 				return NULL;
 			}
 			page->pt_owner_mm = mm;
+			hydra_pt_inc(&mm->hydra_nr_pte[page_to_nid(page)],
+				     &mm->hydra_max_pte[page_to_nid(page)]);
 			return ptdesc_page(ptdesc);
 		}
 
@@ -126,6 +134,8 @@ static inline pgtable_t __pte_alloc_one_noprof(struct mm_struct *mm, gfp_t gfp)
 	}
 
 	page->pt_owner_mm = mm;
+	hydra_pt_inc(&mm->hydra_nr_pte[page_to_nid(page)],
+		     &mm->hydra_max_pte[page_to_nid(page)]);
 	return ptdesc_page(ptdesc);
 }
 #define __pte_alloc_one(...)	alloc_hooks(__pte_alloc_one_noprof(__VA_ARGS__))
@@ -143,6 +153,9 @@ static inline void pte_free(struct mm_struct *mm, struct page *pte_page)
 	struct ptdesc *ptdesc = page_ptdesc(pte_page);
 	int nid = page_to_nid(pte_page);
 	bool from_cache = PageHydraFromCache(pte_page);
+
+	if (pte_page->pt_owner_mm)
+		hydra_pt_dec(&pte_page->pt_owner_mm->hydra_nr_pte[nid]);
 
 	hydra_break_chain(pte_page);
 	pagetable_dtor(ptdesc);
@@ -187,6 +200,8 @@ static inline pmd_t *pmd_alloc_one_noprof(struct mm_struct *mm, unsigned long ad
 			if (mm == &init_mm)
 				ptdesc_set_kernel(ptdesc);
 			page->pt_owner_mm = mm;
+			hydra_pt_inc(&mm->hydra_nr_pmd[page_to_nid(page)],
+				     &mm->hydra_max_pmd[page_to_nid(page)]);
 			return ptdesc_address(ptdesc);
 		}
 
@@ -210,6 +225,8 @@ static inline pmd_t *pmd_alloc_one_noprof(struct mm_struct *mm, unsigned long ad
 		ptdesc_set_kernel(ptdesc);
 
 	page->pt_owner_mm = mm;
+	hydra_pt_inc(&mm->hydra_nr_pmd[page_to_nid(page)],
+		     &mm->hydra_max_pmd[page_to_nid(page)]);
 	return ptdesc_address(ptdesc);
 }
 #define pmd_alloc_one(...)	alloc_hooks(pmd_alloc_one_noprof(__VA_ARGS__))
@@ -224,6 +241,9 @@ static inline void pmd_free(struct mm_struct *mm, pmd_t *pmd)
 	bool from_cache = PageHydraFromCache(page);
 
 	BUG_ON((unsigned long)pmd & (PAGE_SIZE-1));
+
+	if (page->pt_owner_mm)
+		hydra_pt_dec(&page->pt_owner_mm->hydra_nr_pmd[nid]);
 
 	hydra_break_chain(page);
 	pagetable_dtor(ptdesc);
@@ -265,6 +285,8 @@ static inline pud_t *__pud_alloc_one_noprof(struct mm_struct *mm, unsigned long 
 			if (mm == &init_mm)
 				ptdesc_set_kernel(ptdesc);
 			page->pt_owner_mm = mm;
+			hydra_pt_inc(&mm->hydra_nr_pud[page_to_nid(page)],
+				     &mm->hydra_max_pud[page_to_nid(page)]);
 			return ptdesc_address(ptdesc);
 		}
 
@@ -285,6 +307,8 @@ static inline pud_t *__pud_alloc_one_noprof(struct mm_struct *mm, unsigned long 
 		ptdesc_set_kernel(ptdesc);
 
 	page->pt_owner_mm = mm;
+	hydra_pt_inc(&mm->hydra_nr_pud[page_to_nid(page)],
+		     &mm->hydra_max_pud[page_to_nid(page)]);
 	return ptdesc_address(ptdesc);
 }
 #define __pud_alloc_one(...)	alloc_hooks(__pud_alloc_one_noprof(__VA_ARGS__))
@@ -305,6 +329,9 @@ static inline void __pud_free(struct mm_struct *mm, pud_t *pud)
 	bool from_cache = PageHydraFromCache(page);
 
 	BUG_ON((unsigned long)pud & (PAGE_SIZE-1));
+
+	if (page->pt_owner_mm)
+		hydra_pt_dec(&page->pt_owner_mm->hydra_nr_pud[nid]);
 
 	hydra_break_chain(page);
 
@@ -351,6 +378,8 @@ static inline p4d_t *__p4d_alloc_one_noprof(struct mm_struct *mm, unsigned long 
 			if (mm == &init_mm)
 				ptdesc_set_kernel(ptdesc);
 			page->pt_owner_mm = mm;
+			hydra_pt_inc(&mm->hydra_nr_p4d[page_to_nid(page)],
+				     &mm->hydra_max_p4d[page_to_nid(page)]);
 			return ptdesc_address(ptdesc);
 		}
 
@@ -371,6 +400,8 @@ static inline p4d_t *__p4d_alloc_one_noprof(struct mm_struct *mm, unsigned long 
 		ptdesc_set_kernel(ptdesc);
 
 	page->pt_owner_mm = mm;
+	hydra_pt_inc(&mm->hydra_nr_p4d[page_to_nid(page)],
+		     &mm->hydra_max_p4d[page_to_nid(page)]);
 	return ptdesc_address(ptdesc);
 }
 #define __p4d_alloc_one(...)	alloc_hooks(__p4d_alloc_one_noprof(__VA_ARGS__))
@@ -393,6 +424,8 @@ static inline p4d_t *repl_p4d_alloc_one(struct mm_struct *mm, unsigned long addr
 		ptdesc = page_ptdesc(page);
 		pagetable_p4d_ctor(ptdesc);
 		page->pt_owner_mm = mm;
+		hydra_pt_inc(&mm->hydra_nr_p4d[page_to_nid(page)],
+			     &mm->hydra_max_p4d[page_to_nid(page)]);
 		return ptdesc_address(ptdesc);
 	}
 
@@ -403,6 +436,8 @@ static inline p4d_t *repl_p4d_alloc_one(struct mm_struct *mm, unsigned long addr
 	ptdesc = page_ptdesc(page);
 	pagetable_p4d_ctor(ptdesc);
 	page->pt_owner_mm = mm;
+	hydra_pt_inc(&mm->hydra_nr_p4d[page_to_nid(page)],
+		     &mm->hydra_max_p4d[page_to_nid(page)]);
 	return ptdesc_address(ptdesc);
 }
 
@@ -414,6 +449,9 @@ static inline void __p4d_free(struct mm_struct *mm, p4d_t *p4d)
 	bool from_cache = PageHydraFromCache(page);
 
 	BUG_ON((unsigned long)p4d & (PAGE_SIZE-1));
+
+	if (page->pt_owner_mm)
+		hydra_pt_dec(&page->pt_owner_mm->hydra_nr_p4d[nid]);
 
 	hydra_break_chain(page);
 
