@@ -498,43 +498,18 @@ int pmdp_set_access_flags(struct vm_area_struct *vma,
 			  unsigned long address, pmd_t *pmdp,
 			  pmd_t entry, int dirty)
 {
-	struct page *pmd_page;
-	struct page *cur;
-	unsigned long offset;
-	int changed;
-
-	changed = !pmd_same(*pmdp, entry);
+	int changed = !pmd_same(*pmdp, entry);
 
 	VM_BUG_ON(address & ~HPAGE_PMD_MASK);
 
-	if (!virt_addr_valid(pmdp)) {
-		if (changed && dirty)
-			set_pmd(pmdp, entry);
-		return changed;
-	}
-
-	pmd_page = virt_to_page(pmdp);
-
-	if (!READ_ONCE(pmd_page->next_replica)) {
-		if (changed && dirty)
-			set_pmd(pmdp, entry);
-		return changed;
-	}
-
-	if (changed && dirty)
-		native_set_pmd(pmdp, entry);
-
-	offset = ((unsigned long)pmdp) & ~PAGE_MASK;
-
-	for_each_replica(pmd_page, cur) {
-		pmd_t *replica_pmdp = (pmd_t *)(page_address(cur) + offset);
-		pmd_t old_repl = *replica_pmdp;
-
-		changed |= !pmd_same(old_repl, entry);
-
-		if (dirty) {
-			native_set_pmd(replica_pmdp, pmd_mkold(entry));
-		}
+	if (changed && dirty) {
+		set_pmd(pmdp, entry);
+		/*
+		 * We had a write-protection fault here and changed the pmd
+		 * to to more permissive. No need to flush the TLB for that,
+		 * #PF is architecturally guaranteed to do that and in the
+		 * worst-case we'll generate a spurious fault.
+		 */
 	}
 
 	return changed;
