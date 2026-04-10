@@ -308,9 +308,9 @@ static void hydra_status_print_header(struct seq_file *m, int nr_online,
 				      int *online_nodes)
 {
 	seq_printf(m,
-		"==========================================================================================\n"
-		"                                  HYDRA STATUS REPORT                                      \n"
-		"==========================================================================================\n\n");
+		"======================================================================\n"
+		"                         HYDRA STATUS REPORT                          \n"
+		"======================================================================\n\n");
 
 	seq_printf(m, "  Online nodes:       %d\n", nr_online);
 
@@ -348,9 +348,9 @@ static void hydra_status_print_cache(struct seq_file *m, int nr_online,
 	long total_hits = 0, total_misses = 0, total_returns = 0;
 
 	seq_printf(m, "  PAGE TABLE CACHE\n");
-	seq_printf(m, "  %6s %14s %14s %14s %14s\n",
+	seq_printf(m, "  %4s %10s %10s %10s %10s\n",
 		   "Node", "Pages", "Hits", "Misses", "Returns");
-	seq_printf(m, "  ------ -------------- -------------- -------------- --------------\n");
+	seq_printf(m, "  ---- ---------- ---------- ---------- ----------\n");
 
 	for (i = 0; i < nr_online; i++) {
 		int n = online_nodes[i];
@@ -364,14 +364,14 @@ static void hydra_status_print_cache(struct seq_file *m, int nr_online,
 		total_misses += misses;
 		total_returns += returns;
 
-		seq_printf(m, "  %6d %14d %14ld %14ld %14ld\n",
+		seq_printf(m, "  %4d %10d %10ld %10ld %10ld\n",
 			   n, count, hits, misses, returns);
 	}
 
-	seq_printf(m, "  ------ -------------- -------------- -------------- --------------\n");
-	seq_printf(m, "  %6s %14d %14ld %14ld %14ld\n",
-		   "Total", total_pages, total_hits, total_misses, total_returns);
-	seq_printf(m, "         (%lu KB)\n\n",
+	seq_printf(m, "  ---- ---------- ---------- ---------- ----------\n");
+	seq_printf(m, "  %4s %10d %10ld %10ld %10ld\n",
+		   "Tot.", total_pages, total_hits, total_misses, total_returns);
+	seq_printf(m, "       (%lu KB)\n\n",
 		   (unsigned long)total_pages * PAGE_SIZE / 1024);
 }
 
@@ -384,10 +384,10 @@ static void hydra_status_print_tlb_table(struct seq_file *m,
 	long pct = (tlb_total > 0) ? (tlb_saved * 100) / tlb_total : 0;
 
 	seq_printf(m, "    TLB Shootdowns\n");
-	seq_printf(m, "    %16s %16s %16s %10s\n",
+	seq_printf(m, "    %10s %10s %10s %8s\n",
 		   "Total", "Sent", "Saved", "Saved%");
-	seq_printf(m, "    ---------------- ---------------- ---------------- ----------\n");
-	seq_printf(m, "    %16ld %16ld %16ld %8ld%%\n\n",
+	seq_printf(m, "    ---------- ---------- ---------- --------\n");
+	seq_printf(m, "    %10ld %10ld %10ld %6ld%%\n\n",
 		   tlb_total, tlb_sent, tlb_saved, pct);
 }
 
@@ -402,12 +402,12 @@ static void hydra_status_print_repl_table(struct seq_file *m,
 	long avg_hpmd = (hpmd_faults > 0) ? hpmd_copied / hpmd_faults : 0;
 
 	seq_printf(m, "    Replication Faults\n");
-	seq_printf(m, "    %-10s %16s %16s %16s\n",
+	seq_printf(m, "    %-8s %10s %10s %10s\n",
 		   "Type", "Faults", "Copied", "Avg/fault");
-	seq_printf(m, "    ---------- ---------------- ---------------- ----------------\n");
-	seq_printf(m, "    %-10s %16ld %16ld %16ld\n",
+	seq_printf(m, "    -------- ---------- ---------- ----------\n");
+	seq_printf(m, "    %-8s %10ld %10ld %10ld\n",
 		   "PTE", pte_faults, ptes_copied, avg_pte);
-	seq_printf(m, "    %-10s %16ld %16ld %16ld\n\n",
+	seq_printf(m, "    %-8s %10ld %10ld %10ld\n\n",
 		   "HugePMD", hpmd_faults, hpmd_copied, avg_hpmd);
 }
 
@@ -440,9 +440,8 @@ static void hydra_status_print_vma_dist(struct seq_file *m,
 	mmap_read_unlock(mm);
 
 	seq_printf(m, "    VMA Distribution (%lu total)\n", nr_vmas);
-	seq_printf(m, "    %6s %10s %7s  %s\n",
-		   "Node", "VMAs", "%", "");
-	seq_printf(m, "    ------ ---------- -------  ------------------------------------------------------\n");
+	seq_printf(m, "    %4s %8s %6s  %s\n", "Node", "VMAs", "%", "");
+	seq_printf(m, "    ---- -------- ------  ------------------------\n");
 
 	bar_max = 0;
 	for (i = 0; i < nr_online; i++) {
@@ -454,10 +453,10 @@ static void hydra_status_print_vma_dist(struct seq_file *m,
 		int n = online_nodes[i];
 		unsigned long cnt = vma_counts[n];
 		int pct = nr_vmas > 0 ? (int)((cnt * 100) / nr_vmas) : 0;
-		int bar_len = bar_max > 0 ? (int)((cnt * 54) / bar_max) : 0;
+		int bar_len = bar_max > 0 ? (int)((cnt * 24) / bar_max) : 0;
 		int j;
 
-		seq_printf(m, "    %6d %10lu %6d%%  ", n, cnt, pct);
+		seq_printf(m, "    %4d %8lu %5d%%  ", n, cnt, pct);
 		for (j = 0; j < bar_len; j++)
 			seq_printf(m, "#");
 		seq_printf(m, "\n");
@@ -485,21 +484,21 @@ static void hydra_status_print_migration(struct seq_file *m,
 		return;
 
 	seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
-	seq_printf(m, "    %6s", "src\\dst");
+	seq_printf(m, "    %4s", "s\\d");
 	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " %14d", online_nodes[i]);
+		seq_printf(m, " %10d", online_nodes[i]);
 	seq_printf(m, "\n");
 
-	seq_printf(m, "    ------");
+	seq_printf(m, "    ----");
 	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " --------------");
+		seq_printf(m, " ----------");
 	seq_printf(m, "\n");
 
 	for (i = 0; i < nr_online; i++) {
 		int src = online_nodes[i];
-		seq_printf(m, "    %6d", src);
+		seq_printf(m, "    %4d", src);
 		for (j = 0; j < nr_online; j++)
-			seq_printf(m, " %14ld", matrix[src][online_nodes[j]]);
+			seq_printf(m, " %10ld", matrix[src][online_nodes[j]]);
 		seq_printf(m, "\n");
 	}
 	seq_printf(m, "\n");
@@ -511,9 +510,9 @@ static void hydra_status_print_mm_counters(struct seq_file *m,
 	long pt_bytes = mm_pgtables_bytes(mm);
 
 	seq_printf(m, "    Page Table Memory\n");
-	seq_printf(m, "    %16s %16s\n", "Bytes", "KB");
-	seq_printf(m, "    ---------------- ----------------\n");
-	seq_printf(m, "    %16ld %16ld\n\n", pt_bytes, pt_bytes / 1024);
+	seq_printf(m, "    %12s %12s\n", "Bytes", "KB");
+	seq_printf(m, "    ------------ ------------\n");
+	seq_printf(m, "    %12ld %12ld\n\n", pt_bytes, pt_bytes / 1024);
 }
 
 static void hydra_status_print_pt_counts(struct seq_file *m,
@@ -540,20 +539,20 @@ static void hydra_status_print_pt_counts(struct seq_file *m,
 		seq_printf(m, "    Page Table Counts (current) per node\n");
 	}
 
-	seq_printf(m, "    %5s", "Lvl");
+	seq_printf(m, "    %4s", "Lvl");
 	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " %14d", online_nodes[i]);
+		seq_printf(m, " %10d", online_nodes[i]);
 	seq_printf(m, "\n");
 
-	seq_printf(m, "    -----");
+	seq_printf(m, "    ----");
 	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " --------------");
+		seq_printf(m, " ----------");
 	seq_printf(m, "\n");
 
 	for (r = 0; r < 5; r++) {
-		seq_printf(m, "    %5s", names[r]);
+		seq_printf(m, "    %4s", names[r]);
 		for (i = 0; i < nr_online; i++)
-			seq_printf(m, " %14ld", rows[r][online_nodes[i]]);
+			seq_printf(m, " %10ld", rows[r][online_nodes[i]]);
 		seq_printf(m, "\n");
 	}
 	seq_printf(m, "\n");
@@ -574,9 +573,9 @@ static int hydra_status_show(struct seq_file *m, void *v)
 	hydra_status_print_cache(m, nr_online, online_nodes);
 
 	seq_printf(m,
-		"------------------------------------------------------------------------------------------\n"
+		"----------------------------------------------------------------------\n"
 		"  PER-PROCESS DETAILS\n"
-		"------------------------------------------------------------------------------------------\n\n");
+		"----------------------------------------------------------------------\n\n");
 
 	rcu_read_lock();
 	for_each_process(task) {
@@ -592,7 +591,7 @@ static int hydra_status_show(struct seq_file *m, void *v)
 
 		seq_printf(m, "  [%s]  pid %d\n", task->comm, task->pid);
 		seq_printf(m,
-			"  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+			"  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
 		hydra_status_print_tlb_table(m, mm);
 		hydra_status_print_repl_table(m, mm);
@@ -629,9 +628,9 @@ static int hydra_status_show(struct seq_file *m, void *v)
 	rcu_read_unlock();
 
 	seq_printf(m,
-		"==========================================================================================\n"
+		"======================================================================\n"
 		"  %d hydra-enabled process(es)\n"
-		"==========================================================================================\n",
+		"======================================================================\n",
 		total_hydra);
 
 	return 0;
@@ -940,9 +939,9 @@ struct hydra_verify_stats {
 static void hydra_verify_print_header(struct seq_file *m, int nr_online)
 {
 	seq_printf(m,
-		"==========================================================================================\n"
-		"                                HYDRA VERIFICATION REPORT                                  \n"
-		"==========================================================================================\n\n");
+		"======================================================================\n"
+		"                      HYDRA VERIFICATION REPORT                       \n"
+		"======================================================================\n\n");
 
 	if (!sysctl_hydra_verify_enabled) {
 		seq_printf(m, "  Status:         DISABLED\n\n");
@@ -1025,10 +1024,10 @@ static void hydra_verify_print_invariant_row(struct seq_file *m,
 					     unsigned long violations,
 					     unsigned long checked)
 {
-	seq_printf(m, "    %-6s %-40s %s",
+	seq_printf(m, "    %-5s %-32s %s",
 		   name, desc, pass ? "[ OK ]" : "[FAIL]");
 	if (checked > 0 || violations > 0)
-		seq_printf(m, "   %lu bad / %lu checked", violations, checked);
+		seq_printf(m, "  %lu/%lu", violations, checked);
 	seq_printf(m, "\n");
 }
 
@@ -1039,12 +1038,12 @@ static void hydra_verify_print_node_table(struct seq_file *m,
 	int i;
 
 	seq_printf(m, "\n    Per-node breakdown\n");
-	seq_printf(m, "    %6s %16s %16s  %16s %16s\n",
-		   "Node", "INV2 checked", "INV2 bad", "INV3 checked", "INV3 bad");
-	seq_printf(m, "    ------ ---------------- ----------------  ---------------- ----------------\n");
+	seq_printf(m, "    %4s %12s %12s  %12s %12s\n",
+		   "Node", "INV2 chk", "INV2 bad", "INV3 chk", "INV3 bad");
+	seq_printf(m, "    ---- ------------ ------------  ------------ ------------\n");
 	for (i = 0; i < nr_online; i++) {
 		int n = online_nodes[i];
-		seq_printf(m, "    %6d %16lu %16lu  %16lu %16lu\n",
+		seq_printf(m, "    %4d %12lu %12lu  %12lu %12lu\n",
 			   n,
 			   s->inv2_node_checked[n],
 			   s->inv2_node_violations[n],
@@ -1075,9 +1074,9 @@ static void hydra_verify_print_bars(struct seq_file *m, const char *label,
 	for (i = 0; i < nr_online; i++) {
 		int n = online_nodes[i];
 		unsigned long cnt = checked[n];
-		int bar_len = (int)((cnt * 60) / max);
+		int bar_len = (int)((cnt * 40) / max);
 
-		seq_printf(m, "    n%-3d %16lu  ", n, cnt);
+		seq_printf(m, "    n%-2d %12lu  ", n, cnt);
 		for (j = 0; j < bar_len; j++)
 			seq_printf(m, "#");
 		if (violations[n])
@@ -1095,12 +1094,12 @@ static void hydra_verify_print_process(struct seq_file *m,
 	bool all_pass = s->inv1_pass && s->inv2_pass && s->inv3_pass;
 
 	seq_printf(m,
-		"  +--------------------------------------------------------------------------------------+\n");
+		"  +----------------------------------------------------------------+\n");
 	seq_printf(m,
-		"  | %-20s  PID %-8d  %-48s |\n",
+		"  | %-16s  PID %-6d  %-30s |\n",
 		task->comm, task->pid, all_pass ? "[ ALL PASS ]" : "[ FAILURES ]");
 	seq_printf(m,
-		"  +--------------------------------------------------------------------------------------+\n");
+		"  +----------------------------------------------------------------+\n");
 
 	hydra_verify_print_invariant_row(m, "INV1", "replica PGDs present",
 					 s->inv1_pass, s->inv1_missing,
@@ -1131,29 +1130,29 @@ static void hydra_verify_print_summary(struct seq_file *m,
 				       unsigned long inv3_violations)
 {
 	seq_printf(m,
-		"------------------------------------------------------------------------------------------\n"
+		"----------------------------------------------------------------------\n"
 		"  GLOBAL SUMMARY\n"
-		"------------------------------------------------------------------------------------------\n");
-	seq_printf(m, "  Processes checked:       %d\n", total_checked);
-	seq_printf(m, "  Passed:                  %d\n", total_passed);
-	seq_printf(m, "  Failed:                  %d\n", total_failed);
-	seq_printf(m, "  Skipped (locked):        %d\n\n", total_skipped);
-	seq_printf(m, "  INV1 missing PGDs:       %lu\n", inv1_missing);
-	seq_printf(m, "  INV2 pages checked:      %lu  (violations: %lu)\n",
+		"----------------------------------------------------------------------\n");
+	seq_printf(m, "  Processes checked:   %d\n", total_checked);
+	seq_printf(m, "  Passed:              %d\n", total_passed);
+	seq_printf(m, "  Failed:              %d\n", total_failed);
+	seq_printf(m, "  Skipped (locked):    %d\n\n", total_skipped);
+	seq_printf(m, "  INV1 missing PGDs:   %lu\n", inv1_missing);
+	seq_printf(m, "  INV2 pages checked:  %lu  (violations: %lu)\n",
 		   inv2_checked, inv2_violations);
-	seq_printf(m, "  INV3 PTEs checked:       %lu  (violations: %lu)\n\n",
+	seq_printf(m, "  INV3 PTEs checked:   %lu  (violations: %lu)\n\n",
 		   inv3_checked, inv3_violations);
 
 	if (total_failed == 0 && total_checked > 0)
-		seq_printf(m, "  Result:                  ALL PASS\n\n");
+		seq_printf(m, "  Result:              ALL PASS\n\n");
 	else if (total_checked == 0)
-		seq_printf(m, "  Result:                  NO HYDRA PROCESSES\n\n");
+		seq_printf(m, "  Result:              NO HYDRA PROCESSES\n\n");
 	else
-		seq_printf(m, "  Result:                  %d FAILURE(S)\n\n",
+		seq_printf(m, "  Result:              %d FAILURE(S)\n\n",
 			   total_failed);
 
 	seq_printf(m,
-		"==========================================================================================\n");
+		"======================================================================\n");
 }
 
 static int hydra_verify_show(struct seq_file *m, void *v)
@@ -1176,7 +1175,7 @@ static int hydra_verify_show(struct seq_file *m, void *v)
 
 	if (!sysctl_hydra_verify_enabled) {
 		seq_printf(m,
-			"==========================================================================================\n");
+			"======================================================================\n");
 		return 0;
 	}
 
@@ -1193,12 +1192,12 @@ static int hydra_verify_show(struct seq_file *m, void *v)
 
 		if (!mmap_read_trylock(mm)) {
 			seq_printf(m,
-				"  +--------------------------------------------------------------------------------------+\n");
+				"  +----------------------------------------------------------------+\n");
 			seq_printf(m,
-				"  | %-20s  PID %-8d  %-48s |\n",
+				"  | %-16s  PID %-6d  %-30s |\n",
 				task->comm, task->pid, "[ SKIP: locked ]");
 			seq_printf(m,
-				"  +--------------------------------------------------------------------------------------+\n\n");
+				"  +----------------------------------------------------------------+\n\n");
 			total_skipped++;
 			rcu_read_lock();
 			continue;
@@ -1305,18 +1304,18 @@ static int hydra_history_show(struct seq_file *m, void *v)
 	if (hydra_history_count == 0) {
 		spin_unlock_irqrestore(&hydra_history_lock, flags);
 		seq_printf(m,
-			"==========================================================================================\n"
-			"                                   HYDRA EXIT HISTORY                                      \n"
-			"==========================================================================================\n\n"
+			"======================================================================\n"
+			"                         HYDRA EXIT HISTORY                           \n"
+			"======================================================================\n\n"
 			"  No history entries.\n\n"
-			"==========================================================================================\n");
+			"======================================================================\n");
 		return 0;
 	}
 
 	seq_printf(m,
-		"==========================================================================================\n"
-		"                                   HYDRA EXIT HISTORY                                      \n"
-		"==========================================================================================\n\n");
+		"======================================================================\n"
+		"                         HYDRA EXIT HISTORY                           \n"
+		"======================================================================\n\n");
 
 	list_for_each_entry(e, &hydra_history_list, list) {
 		u64 sec = e->exit_time_ns;
@@ -1335,22 +1334,22 @@ static int hydra_history_show(struct seq_file *m, void *v)
 		seq_printf(m, "  [%s]  pid %d  exited %llu.%09u\n",
 			   e->comm, e->pid, sec, nsec);
 		seq_printf(m,
-			"  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+			"  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
 		seq_printf(m, "    TLB Shootdowns\n");
-		seq_printf(m, "    %16s %16s %16s %10s\n",
+		seq_printf(m, "    %10s %10s %10s %8s\n",
 			   "Total", "Sent", "Saved", "Saved%");
-		seq_printf(m, "    ---------------- ---------------- ---------------- ----------\n");
-		seq_printf(m, "    %16ld %16ld %16ld %8ld%%\n\n",
+		seq_printf(m, "    ---------- ---------- ---------- --------\n");
+		seq_printf(m, "    %10ld %10ld %10ld %6ld%%\n\n",
 			   e->tlb_total, e->tlb_sent, e->tlb_saved, tlb_pct);
 
 		seq_printf(m, "    Replication Faults\n");
-		seq_printf(m, "    %-10s %16s %16s %16s\n",
+		seq_printf(m, "    %-8s %10s %10s %10s\n",
 			   "Type", "Faults", "Copied", "Avg/fault");
-		seq_printf(m, "    ---------- ---------------- ---------------- ----------------\n");
-		seq_printf(m, "    %-10s %16ld %16ld %16ld\n",
+		seq_printf(m, "    -------- ---------- ---------- ----------\n");
+		seq_printf(m, "    %-8s %10ld %10ld %10ld\n",
 			   "PTE", e->pte_faults, e->ptes_copied, avg_pte);
-		seq_printf(m, "    %-10s %16ld %16ld %16ld\n\n",
+		seq_printf(m, "    %-8s %10ld %10ld %10ld\n\n",
 			   "HugePMD", e->hugepmd_faults, e->hugepmd_copied,
 			   avg_hpmd);
 
@@ -1365,21 +1364,21 @@ static int hydra_history_show(struct seq_file *m, void *v)
 
 		if (matrix_total > 0) {
 			seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
-			seq_printf(m, "    %6s", "src\\dst");
+			seq_printf(m, "    %4s", "s\\d");
 			for (i = 0; i < nr_online; i++)
-				seq_printf(m, " %14d", online_nodes[i]);
+				seq_printf(m, " %10d", online_nodes[i]);
 			seq_printf(m, "\n");
 
-			seq_printf(m, "    ------");
+			seq_printf(m, "    ----");
 			for (i = 0; i < nr_online; i++)
-				seq_printf(m, " --------------");
+				seq_printf(m, " ----------");
 			seq_printf(m, "\n");
 
 			for (i = 0; i < nr_online; i++) {
 				int src = online_nodes[i];
-				seq_printf(m, "    %6d", src);
+				seq_printf(m, "    %4d", src);
 				for (j = 0; j < nr_online; j++)
-					seq_printf(m, " %14ld",
+					seq_printf(m, " %10ld",
 						   e->migration_matrix[src][online_nodes[j]]);
 				seq_printf(m, "\n");
 			}
@@ -1388,9 +1387,9 @@ static int hydra_history_show(struct seq_file *m, void *v)
 	}
 
 	seq_printf(m,
-		"==========================================================================================\n"
+		"======================================================================\n"
 		"  %d entr%s\n"
-		"==========================================================================================\n",
+		"======================================================================\n",
 		hydra_history_count,
 		hydra_history_count == 1 ? "y" : "ies");
 
@@ -1670,13 +1669,13 @@ static int hydra_walk_show(struct seq_file *m, void *v)
 
 	if (!walk_pid) {
 		seq_printf(m,
-			"==========================================================================================\n"
-			"                                  HYDRA PAGE TABLE WALK                                    \n"
-			"==========================================================================================\n\n");
+			"======================================================================\n"
+			"                        HYDRA PAGE TABLE WALK                         \n"
+			"======================================================================\n\n");
 		seq_printf(m, "  Usage:  echo '<pid> <hex_addr>' > /proc/hydra/walk\n");
-		seq_printf(m, "  Then read this file to see the page table state for that address.\n\n");
+		seq_printf(m, "  Then read this file to see the page table state.\n\n");
 		seq_printf(m,
-			"==========================================================================================\n");
+			"======================================================================\n");
 		return 0;
 	}
 
@@ -1701,9 +1700,9 @@ static int hydra_walk_show(struct seq_file *m, void *v)
 	}
 
 	seq_printf(m,
-		"==========================================================================================\n"
-		"                                  HYDRA PAGE TABLE WALK                                    \n"
-		"==========================================================================================\n\n");
+		"======================================================================\n"
+		"                        HYDRA PAGE TABLE WALK                         \n"
+		"======================================================================\n\n");
 	seq_printf(m, "  PID:            %d\n", walk_pid);
 	seq_printf(m, "  Address:        0x%016lx\n", walk_addr);
 	seq_printf(m, "  Replication:    %s\n\n",
@@ -1725,9 +1724,9 @@ static int hydra_walk_show(struct seq_file *m, void *v)
 
 	seq_printf(m, "\n");
 	seq_printf(m,
-		"------------------------------------------------------------------------------------------\n"
+		"----------------------------------------------------------------------\n"
 		"  PAGE TABLE ENTRIES\n"
-		"------------------------------------------------------------------------------------------\n\n");
+		"----------------------------------------------------------------------\n\n");
 
 	if (!mm->lazy_repl_enabled) {
 		seq_printf(m, "  Single page table (no replication):\n\n");
@@ -1737,11 +1736,11 @@ static int hydra_walk_show(struct seq_file *m, void *v)
 			int n = online_nodes[i];
 			if (mm->repl_pgd[n] == mm->pgd)
 				seq_printf(m,
-					"  --- Node %d (PRIMARY) --------------------------------------------------------------\n",
+					"  --- Node %d (PRIMARY) ---------------------------------------------\n",
 					n);
 			else
 				seq_printf(m,
-					"  --- Node %d (REPLICA) --------------------------------------------------------------\n",
+					"  --- Node %d (REPLICA) ---------------------------------------------\n",
 					n);
 			walk_one_node(m, mm, walk_addr, n);
 			seq_printf(m, "\n");
@@ -1749,7 +1748,7 @@ static int hydra_walk_show(struct seq_file *m, void *v)
 	}
 
 	seq_printf(m,
-		"==========================================================================================\n");
+		"======================================================================\n");
 
 	mmap_read_unlock(mm);
 	mmput(mm);
@@ -2000,13 +1999,13 @@ static int hydra_thp_check_show(struct seq_file *m, void *v)
 
 	if (!thp_check_pid) {
 		seq_printf(m,
-			"==========================================================================================\n"
-			"                                HYDRA THP CONSISTENCY CHECK                                \n"
-			"==========================================================================================\n\n");
+			"======================================================================\n"
+			"                      HYDRA THP CONSISTENCY CHECK                     \n"
+			"======================================================================\n\n");
 		seq_printf(m, "  Usage:  echo '<pid>' > /proc/hydra/thp_check\n");
 		seq_printf(m, "  Then read this file to see the THP consistency report.\n\n");
 		seq_printf(m,
-			"==========================================================================================\n");
+			"======================================================================\n");
 		return 0;
 	}
 
@@ -2039,16 +2038,16 @@ static int hydra_thp_check_show(struct seq_file *m, void *v)
 	memset(&total, 0, sizeof(total));
 
 	seq_printf(m,
-		"==========================================================================================\n"
-		"                                HYDRA THP CONSISTENCY CHECK                                \n"
-		"==========================================================================================\n\n");
+		"======================================================================\n"
+		"                      HYDRA THP CONSISTENCY CHECK                     \n"
+		"======================================================================\n\n");
 	seq_printf(m, "  PID:            %d (%s)\n", thp_check_pid, task->comm);
 	seq_printf(m, "  Online nodes:   %d\n\n", nr_online);
 
 	seq_printf(m,
-		"------------------------------------------------------------------------------------------\n"
+		"----------------------------------------------------------------------\n"
 		"  PER-VMA FINDINGS\n"
-		"------------------------------------------------------------------------------------------\n\n");
+		"----------------------------------------------------------------------\n\n");
 
 	mmap_read_lock(mm);
 
@@ -2100,11 +2099,11 @@ static int hydra_thp_check_show(struct seq_file *m, void *v)
 				else
 					seq_printf(m, "  anon");
 				seq_printf(m, "\n");
-				seq_printf(m, "    checked=%-10lu  master_thp=%-10lu  replica_thp=%-10lu\n",
+				seq_printf(m, "    checked=%-8lu  master_thp=%-8lu  replica_thp=%-8lu\n",
 					   vma_stats.pmds_checked,
 					   vma_stats.thp_master_count,
 					   vma_stats.thp_replica_count);
-				seq_printf(m, "    match=%-10lu  not_repl=%-10lu  errors=%d\n\n",
+				seq_printf(m, "    match=%-8lu  not_repl=%-8lu  errors=%d\n\n",
 					   vma_stats.thp_match,
 					   vma_stats.thp_not_replicated,
 					   vma_errors);
@@ -2126,34 +2125,34 @@ static int hydra_thp_check_show(struct seq_file *m, void *v)
 	mmap_read_unlock(mm);
 
 	seq_printf(m,
-		"------------------------------------------------------------------------------------------\n"
+		"----------------------------------------------------------------------\n"
 		"  SUMMARY\n"
-		"------------------------------------------------------------------------------------------\n");
-	seq_printf(m, "  PMDs checked:            %lu\n", total.pmds_checked);
-	seq_printf(m, "  Master THP count:        %lu\n", total.thp_master_count);
-	seq_printf(m, "  Replica THP count:       %lu\n", total.thp_replica_count);
-	seq_printf(m, "  THP matched:             %lu\n", total.thp_match);
-	seq_printf(m, "  THP not replicated:      %lu\n", total.thp_not_replicated);
+		"----------------------------------------------------------------------\n");
+	seq_printf(m, "  PMDs checked:        %lu\n", total.pmds_checked);
+	seq_printf(m, "  Master THP count:    %lu\n", total.thp_master_count);
+	seq_printf(m, "  Replica THP count:   %lu\n", total.thp_replica_count);
+	seq_printf(m, "  THP matched:         %lu\n", total.thp_match);
+	seq_printf(m, "  THP not replicated:  %lu\n", total.thp_not_replicated);
 	seq_printf(m, "\n");
-	seq_printf(m, "  ERR stale_thp:           %-10lu  (master split, replica still THP)\n",
+	seq_printf(m, "  ERR stale_thp:       %-8lu  (master split, replica still THP)\n",
 		   total.err_stale_thp);
-	seq_printf(m, "  ERR orphan_thp:          %-10lu  (no master, replica has THP)\n",
+	seq_printf(m, "  ERR orphan_thp:      %-8lu  (no master, replica has THP)\n",
 		   total.err_orphan_thp);
-	seq_printf(m, "  ERR pfn_mismatch:        %-10lu  (both THP but different PFN)\n",
+	seq_printf(m, "  ERR pfn_mismatch:    %-8lu  (both THP but different PFN)\n",
 		   total.err_pfn_mismatch);
-	seq_printf(m, "  ERR excess_write:        %-10lu  (replica writable, master not)\n",
+	seq_printf(m, "  ERR excess_write:    %-8lu  (replica writable, master not)\n",
 		   total.err_excess_write);
-	seq_printf(m, "  ERR type_mismatch:       %-10lu  (master THP vs replica normal)\n",
+	seq_printf(m, "  ERR type_mismatch:   %-8lu  (master THP vs replica normal)\n",
 		   total.err_type_mismatch);
 
 	if (total.err_stale_thp + total.err_orphan_thp + total.err_pfn_mismatch +
 	    total.err_excess_write + total.err_type_mismatch == 0)
-		seq_printf(m, "\n  Result:                  PASS\n\n");
+		seq_printf(m, "\n  Result:              PASS\n\n");
 	else
-		seq_printf(m, "\n  Result:                  FAIL\n\n");
+		seq_printf(m, "\n  Result:              FAIL\n\n");
 
 	seq_printf(m,
-		"==========================================================================================\n");
+		"======================================================================\n");
 
 	mmput(mm);
 	return 0;
@@ -2474,13 +2473,13 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 
 	if (!numa_check_pid) {
 		seq_printf(m,
-			"==========================================================================================\n"
-			"                             HYDRA AUTONUMA CONSISTENCY CHECK                              \n"
-			"==========================================================================================\n\n");
+			"======================================================================\n"
+			"                   HYDRA AUTONUMA CONSISTENCY CHECK                   \n"
+			"======================================================================\n\n");
 		seq_printf(m, "  Usage:  echo '<pid>' > /proc/hydra/numa_check\n");
 		seq_printf(m, "  Then read this file to see the autoNUMA consistency report.\n\n");
 		seq_printf(m,
-			"==========================================================================================\n");
+			"======================================================================\n");
 		return 0;
 	}
 
@@ -2513,16 +2512,16 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 	memset(&total, 0, sizeof(total));
 
 	seq_printf(m,
-		"==========================================================================================\n"
-		"                             HYDRA AUTONUMA CONSISTENCY CHECK                              \n"
-		"==========================================================================================\n\n");
+		"======================================================================\n"
+		"                   HYDRA AUTONUMA CONSISTENCY CHECK                   \n"
+		"======================================================================\n\n");
 	seq_printf(m, "  PID:            %d (%s)\n", numa_check_pid, task->comm);
 	seq_printf(m, "  Online nodes:   %d\n\n", nr_online);
 
 	seq_printf(m,
-		"------------------------------------------------------------------------------------------\n"
+		"----------------------------------------------------------------------\n"
 		"  PER-ENTRY FINDINGS\n"
-		"------------------------------------------------------------------------------------------\n\n");
+		"----------------------------------------------------------------------\n\n");
 
 	mmap_read_lock(mm);
 
@@ -2562,9 +2561,9 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 	mmap_read_unlock(mm);
 
 	seq_printf(m,
-		"------------------------------------------------------------------------------------------\n"
+		"----------------------------------------------------------------------\n"
 		"  SUMMARY\n"
-		"------------------------------------------------------------------------------------------\n");
+		"----------------------------------------------------------------------\n");
 	seq_printf(m, "  PTEs checked:                 %lu\n", total.ptes_checked);
 	seq_printf(m, "  PMDs checked:                 %lu\n", total.pmds_checked);
 	seq_printf(m, "\n");
@@ -2573,15 +2572,15 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 	seq_printf(m, "  PMD protnone (master):        %lu\n", total.pmd_protnone_master);
 	seq_printf(m, "  PMD protnone (replica):       %lu\n", total.pmd_protnone_replica);
 	seq_printf(m, "\n");
-	seq_printf(m, "  ERR protnone_stale:           %-10lu  (master cleared, replica still protnone)\n",
+	seq_printf(m, "  ERR protnone_stale:    %-6lu  (master cleared, replica still protnone)\n",
 		   total.err_protnone_stale);
-	seq_printf(m, "  ERR protnone_missing:         %-10lu  (master protnone, replica not)\n",
+	seq_printf(m, "  ERR protnone_missing:  %-6lu  (master protnone, replica not)\n",
 		   total.err_protnone_missing);
-	seq_printf(m, "  ERR protnone_loop:            %-10lu  (master resolved, replica stuck protnone)\n",
+	seq_printf(m, "  ERR protnone_loop:     %-6lu  (master resolved, replica stuck protnone)\n",
 		   total.err_replica_protnone_loop);
-	seq_printf(m, "  ERR pfn_diverged:             %-10lu  (different physical page after migration)\n",
+	seq_printf(m, "  ERR pfn_diverged:      %-6lu  (different physical page after migration)\n",
 		   total.err_pfn_diverged);
-	seq_printf(m, "  ERR write_excess:             %-10lu  (replica writable, master not)\n",
+	seq_printf(m, "  ERR write_excess:      %-6lu  (replica writable, master not)\n",
 		   total.err_write_excess);
 
 	total_errors = total.err_protnone_stale +
@@ -2596,7 +2595,7 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 		seq_printf(m, "\n  Result:                       FAIL (%d errors)\n\n", total_errors);
 
 	seq_printf(m,
-		"==========================================================================================\n");
+		"======================================================================\n");
 
 	mmput(mm);
 	return 0;
