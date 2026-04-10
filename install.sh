@@ -4,6 +4,8 @@ set -euo pipefail
 
 export LOCALVERSION=
 
+git pull
+
 echo ">>> Fixing ownership of source tree..."
 sudo chown -R "$USER:$(id -gn)" .
 
