@@ -23,7 +23,7 @@ if [[ "$NUMA_NODES" -lt 1 ]]; then
     NUMA_NODES=1
 fi
 
-echo ">>> Setting CONFIG_MITOSIS_NUMA_NODE_COUNT=$NUMA_NODES..."
+echo ">>> Setting CONFIG_HYDRA_NUMA_NODE_COUNT=$NUMA_NODES..."
 ./scripts/config --set-val CONFIG_HYDRA_NUMA_NODE_COUNT "$NUMA_NODES"
 make olddefconfig
 
