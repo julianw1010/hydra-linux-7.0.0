@@ -128,6 +128,7 @@ enum pageflags {
 	PG_arch_3,
 #endif
 	PG_hydra_from_cache,
+	PG_hydra_chain_locked,
 	__NR_PAGEFLAGS,
 
 	PG_readahead = PG_reclaim,

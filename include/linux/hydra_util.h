@@ -319,6 +319,16 @@ static inline int hydra_calculate_tlbflush_nodemask(struct page *const ptpage, n
 	return 1;
 }
 
+static inline void hydra_chain_lock(struct page *master)
+{
+	bit_spin_lock(PG_hydra_chain_locked, (unsigned long *)&master->flags);
+}
+
+static inline void hydra_chain_unlock(struct page *master)
+{
+	bit_spin_unlock(PG_hydra_chain_locked, (unsigned long *)&master->flags);
+}
+
 static inline void hydra_link_page_to_replica_chain(struct page *existing_page,
 						    struct page *new_page)
 {
@@ -328,48 +338,22 @@ static inline void hydra_link_page_to_replica_chain(struct page *existing_page,
 	if (!existing_page || !new_page || existing_page == new_page)
 		return;
 
-	for_each_replica(existing_page, cur) {
+	hydra_chain_lock(existing_page);
+
+	for (cur = READ_ONCE(existing_page->next_replica);
+	     cur && cur != existing_page;
+	     cur = READ_ONCE(cur->next_replica)) {
 		if (cur == new_page)
-			return;
+			goto out_unlock;
 	}
 
-	while (1) {
-		next_repl = READ_ONCE(existing_page->next_replica);
-		WRITE_ONCE(new_page->next_replica, next_repl ? next_repl : existing_page);
-		smp_wmb();
-		if (cmpxchg(&existing_page->next_replica, next_repl,
-			    new_page) == next_repl)
-			break;
-	}
+	next_repl = existing_page->next_replica;
+	new_page->next_replica = next_repl ? next_repl : existing_page;
+	smp_wmb();
+	existing_page->next_replica = new_page;
 
-	/* DEBUG: verify chain integrity after insert */
-	{
-		struct page *walk;
-		int new_count = 0;
-		int total = 0;
-		int saw_cycle = 0;
-
-		walk = READ_ONCE(existing_page->next_replica);
-		while (walk && walk != existing_page && total < NUMA_NODE_COUNT * 4) {
-			if (walk == new_page)
-				new_count++;
-			total++;
-			walk = READ_ONCE(walk->next_replica);
-		}
-		if (walk != existing_page && total >= NUMA_NODE_COUNT * 4)
-			saw_cycle = 1;
-
-		if (new_count != 1 || saw_cycle || total > NUMA_NODE_COUNT) {
-			printk(KERN_ERR
-				"HYDRA CHAIN CORRUPT: existing=%px(n%d) new=%px(n%d) "
-				"new_count=%d total=%d cycle=%d caller=%pS\n",
-				existing_page, page_to_nid(existing_page),
-				new_page, page_to_nid(new_page),
-				new_count, total, saw_cycle,
-				__builtin_return_address(0));
-			dump_stack();
-		}
-	}
+out_unlock:
+	hydra_chain_unlock(existing_page);
 }
 
 static inline void hydra_break_chain(struct page *page)
@@ -379,8 +363,10 @@ static inline void hydra_break_chain(struct page *page)
 	if (!page || !page->next_replica)
 		return;
 
+	hydra_chain_lock(page);
 	cur = page->next_replica;
-	WRITE_ONCE(page->next_replica, NULL);
+	page->next_replica = NULL;
+	hydra_chain_unlock(page);
 
 	while (cur && cur != page) {
 		next = READ_ONCE(cur->next_replica);
