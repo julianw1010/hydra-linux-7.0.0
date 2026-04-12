@@ -4082,6 +4082,9 @@ static void migrate_pmd_pages(struct mm_struct *mm, pud_t *pud,
 		BUG();
 	}
 
+	new_ptdesc->pmd_huge_pte = page_ptdesc(old_page)->pmd_huge_pte;
+	page_ptdesc(old_page)->pmd_huge_pte = NULL;
+
 	ptl = pud_lock(mm, pud);
 
 	if (!pud_same(*pud, old_pud)) {
