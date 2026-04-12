@@ -341,6 +341,35 @@ static inline void hydra_link_page_to_replica_chain(struct page *existing_page,
 			    new_page) == next_repl)
 			break;
 	}
+
+	/* DEBUG: verify chain integrity after insert */
+	{
+		struct page *walk;
+		int new_count = 0;
+		int total = 0;
+		int saw_cycle = 0;
+
+		walk = READ_ONCE(existing_page->next_replica);
+		while (walk && walk != existing_page && total < NUMA_NODE_COUNT * 4) {
+			if (walk == new_page)
+				new_count++;
+			total++;
+			walk = READ_ONCE(walk->next_replica);
+		}
+		if (walk != existing_page && total >= NUMA_NODE_COUNT * 4)
+			saw_cycle = 1;
+
+		if (new_count != 1 || saw_cycle || total > NUMA_NODE_COUNT) {
+			printk(KERN_ERR
+				"HYDRA CHAIN CORRUPT: existing=%px(n%d) new=%px(n%d) "
+				"new_count=%d total=%d cycle=%d caller=%pS\n",
+				existing_page, page_to_nid(existing_page),
+				new_page, page_to_nid(new_page),
+				new_count, total, saw_cycle,
+				__builtin_return_address(0));
+			dump_stack();
+		}
+	}
 }
 
 static inline void hydra_break_chain(struct page *page)

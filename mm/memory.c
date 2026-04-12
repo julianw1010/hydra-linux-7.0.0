@@ -7134,6 +7134,26 @@ int __handle_mm_fault(struct vm_area_struct *vma,
 	int ret;
 	bool on_replica;
 
+if (mm->lazy_repl_enabled && !use_master) {
+	static DEFINE_PER_CPU(unsigned long, hydra_last_addr);
+	static DEFINE_PER_CPU(int, hydra_repeat);
+
+	if (*this_cpu_ptr(&hydra_last_addr) == (address & PAGE_MASK)) {
+		int cnt = ++(*this_cpu_ptr(&hydra_repeat));
+		if (cnt > 100) {
+			printk(KERN_WARNING
+				"HYDRA LOOP: addr=0x%lx pid=%d node=%d master=%lu "
+				"flags=0x%x use_master=%d cnt=%d\n",
+				address, current->pid, numa_node_id(),
+				vma->master_pgd_node, flags, use_master, cnt);
+				dump_stack();
+		}
+	} else {
+		*this_cpu_ptr(&hydra_last_addr) = address & PAGE_MASK;
+		*this_cpu_ptr(&hydra_repeat) = 0;
+	}
+}
+
 	if (use_master) {
 		node_to_use = owner_node;
 	} else {
@@ -7230,34 +7250,16 @@ retry_pud:
 	}
 
 	if (pmd_trans_huge(vmf.orig_pmd)) {
+
 		if (on_replica) {
-			bool needs_master = false;
+			int master_ret;
 
-			if (pmd_protnone(vmf.orig_pmd) && vma_is_accessible(vma))
-				needs_master = true;
-
-			if ((flags & (FAULT_FLAG_WRITE | FAULT_FLAG_UNSHARE)) &&
-			    !pmd_write(vmf.orig_pmd))
-				needs_master = true;
-
-			if (needs_master) {
-				int master_ret;
-
-				hydra_exit_node_scope(&scope);
-
-				master_ret = __handle_mm_fault(vma, address, flags, 1);
-				if (master_ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY | VM_FAULT_COMPLETED))
-					return master_ret;
-				return 0;
-			}
-
-			vmf.ptl = pmd_lock(mm, vmf.pmd);
-			vmf.orig_pmd = *vmf.pmd;
-			if (!huge_pmd_set_accessed(&vmf))
-				fix_spurious_fault(&vmf, PGTABLE_LEVEL_PMD);
-			spin_unlock(vmf.ptl);
-			ret = 0;
-			goto out_restore;
+			hydra_exit_node_scope(&scope);
+			master_ret = __handle_mm_fault(vma, address, flags, 1);
+			if (master_ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
+					  VM_FAULT_RETRY | VM_FAULT_COMPLETED))
+				return master_ret;
+			return 0;
 		}
 
 		if (pmd_protnone(vmf.orig_pmd) && vma_is_accessible(vma)) {
