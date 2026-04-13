@@ -6933,7 +6933,7 @@ static int try_lazy_repl(struct vm_fault *vmf, int fault_node)
 	size_t current_node = fault_node;
 	size_t master_node = vma->master_pgd_node;
 	unsigned long address = vmf->address;
-	unsigned long repl_size, range_start, range_end;
+	unsigned long repl_count, range_start, range_end;
 	unsigned long pmd_addr, start_idx, count;
 	pte_t *ptep, mpte_orig;
 	pte_t *master_pte = NULL, *repl_pte = NULL;
@@ -6966,9 +6966,9 @@ static int try_lazy_repl(struct vm_fault *vmf, int fault_node)
 	}
 
 	if (sysctl_hydra_repl_order > 0) {
-		repl_size = 1ul << sysctl_hydra_repl_order;
-		range_start = address & ~((repl_size << PAGE_SHIFT) - 1);
-		range_end = range_start + (repl_size << PAGE_SHIFT);
+		repl_count = 1ul << sysctl_hydra_repl_order;
+		range_start = address & ~((repl_count << PAGE_SHIFT) - 1);
+		range_end = range_start + (repl_count << PAGE_SHIFT);
 	} else {
 		range_start = address & PAGE_MASK;
 		range_end = range_start + PAGE_SIZE;

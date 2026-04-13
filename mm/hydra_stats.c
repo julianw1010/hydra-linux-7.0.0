@@ -162,9 +162,10 @@ static const struct proc_ops hydra_tlbflush_opt_ops = {
 
 static int hydra_repl_order_show(struct seq_file *m, void *v)
 {
-	seq_printf(m, "%d (%lu PTEs or 1 huge PMD per fault)\n",
-		   sysctl_hydra_repl_order,
-		   sysctl_hydra_repl_order > 0 ? 1UL << sysctl_hydra_repl_order : 1UL);
+	unsigned long count = sysctl_hydra_repl_order > 0 ? 1UL << sysctl_hydra_repl_order : 1UL;
+
+	seq_printf(m, "%d (%lu PTEs or %lu huge PMDs per fault)\n",
+		   sysctl_hydra_repl_order, count, count);
 	return 0;
 }
 
@@ -307,6 +308,8 @@ static const struct proc_ops hydra_cache_ops = {
 static void hydra_status_print_header(struct seq_file *m, int nr_online,
 				      int *online_nodes)
 {
+	unsigned long count = sysctl_hydra_repl_order > 0 ? 1UL << sysctl_hydra_repl_order : 1UL;
+
 	seq_printf(m,
 		"======================================================================\n"
 		"                         HYDRA STATUS REPORT                          \n"
@@ -333,10 +336,8 @@ static void hydra_status_print_header(struct seq_file *m, int nr_online,
 		break;
 	}
 
-	seq_printf(m, "  Replication order:  %d (%lu PTEs per fault)\n",
-		   sysctl_hydra_repl_order,
-		   sysctl_hydra_repl_order > 0
-			   ? 1UL << sysctl_hydra_repl_order : 1UL);
+	seq_printf(m, "  Replication order:  %d (%lu PTEs or %lu huge PMDs per fault)\n",
+		   sysctl_hydra_repl_order, count, count);
 	seq_printf(m, "  Auto-enable:        %s\n\n",
 		   sysctl_hydra_auto_enable ? "yes" : "no");
 }
