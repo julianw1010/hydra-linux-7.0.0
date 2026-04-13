@@ -3315,6 +3315,10 @@ void __split_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 				haddr + HPAGE_PMD_SIZE);
 	mmu_notifier_invalidate_range_start(&range);
 	ptl = pmd_lock(mm, pmd);
+	
+	if (pmd_trans_huge(*pmd))
+		atomic_long_inc(&mm->hydra_thp_splits);
+	
 	split_huge_pmd_locked(vma, range.start, pmd, freeze);
 	spin_unlock(ptl);
 	mmu_notifier_invalidate_range_end(&range);

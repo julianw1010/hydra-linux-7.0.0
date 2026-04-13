@@ -41,6 +41,8 @@ struct hydra_history_entry {
 	long ptes_copied;
 	long hugepmd_faults;
 	long hugepmd_copied;
+	long thp_splits;
+	long thp_merges;
 	long migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
 	long nr_pgd[NUMA_NODE_COUNT], nr_p4d[NUMA_NODE_COUNT];
 	long nr_pud[NUMA_NODE_COUNT], nr_pmd[NUMA_NODE_COUNT], nr_pte[NUMA_NODE_COUNT];
@@ -76,6 +78,8 @@ void hydra_record_exit(struct mm_struct *mm, const char *comm, pid_t pid)
 	e->ptes_copied = atomic_long_read(&mm->hydra_repl_ptes_copied);
 	e->hugepmd_faults = atomic_long_read(&mm->hydra_repl_hugepmd_faults);
 	e->hugepmd_copied = atomic_long_read(&mm->hydra_repl_hugepmd_copied);
+	e->thp_splits = atomic_long_read(&mm->hydra_thp_splits);
+	e->thp_merges = atomic_long_read(&mm->hydra_thp_merges);
 
 	for (n = 0; n < NUMA_NODE_COUNT; n++) {
 		e->nr_pgd[n] = atomic_long_read(&mm->hydra_nr_pgd[n]);
@@ -399,6 +403,8 @@ static void hydra_status_print_repl_table(struct seq_file *m,
 	long ptes_copied = atomic_long_read(&mm->hydra_repl_ptes_copied);
 	long hpmd_faults = atomic_long_read(&mm->hydra_repl_hugepmd_faults);
 	long hpmd_copied = atomic_long_read(&mm->hydra_repl_hugepmd_copied);
+	long thp_splits = atomic_long_read(&mm->hydra_thp_splits);
+	long thp_merges = atomic_long_read(&mm->hydra_thp_merges);
 	long avg_pte = (pte_faults > 0) ? ptes_copied / pte_faults : 0;
 	long avg_hpmd = (hpmd_faults > 0) ? hpmd_copied / hpmd_faults : 0;
 
@@ -410,6 +416,12 @@ static void hydra_status_print_repl_table(struct seq_file *m,
 		   "PTE", pte_faults, ptes_copied, avg_pte);
 	seq_printf(m, "    %-8s %10ld %10ld %10ld\n\n",
 		   "HugePMD", hpmd_faults, hpmd_copied, avg_hpmd);
+
+	seq_printf(m, "    THP Activity\n");
+	seq_printf(m, "    %-8s %10s\n", "Event", "Count");
+	seq_printf(m, "    -------- ----------\n");
+	seq_printf(m, "    %-8s %10ld\n", "Splits", thp_splits);
+	seq_printf(m, "    %-8s %10ld\n\n", "Merges", thp_merges);
 }
 
 static void hydra_status_print_vma_dist(struct seq_file *m,
@@ -674,6 +686,8 @@ static ssize_t hydra_status_write(struct file *file, const char __user *buf,
 			atomic_long_set(&mm->hydra_repl_ptes_copied, 0);
 			atomic_long_set(&mm->hydra_repl_hugepmd_faults, 0);
 			atomic_long_set(&mm->hydra_repl_hugepmd_copied, 0);
+			atomic_long_set(&mm->hydra_thp_splits, 0);
+			atomic_long_set(&mm->hydra_thp_merges, 0);
 			for (i = 0; i < NUMA_NODE_COUNT; i++)
 				for (j = 0; j < NUMA_NODE_COUNT; j++)
 					atomic_long_set(&mm->hydra_migration_matrix[i][j], 0);
@@ -1353,6 +1367,12 @@ static int hydra_history_show(struct seq_file *m, void *v)
 		seq_printf(m, "    %-8s %10ld %10ld %10ld\n\n",
 			   "HugePMD", e->hugepmd_faults, e->hugepmd_copied,
 			   avg_hpmd);
+
+		seq_printf(m, "    THP Activity\n");
+		seq_printf(m, "    %-8s %10s\n", "Event", "Count");
+		seq_printf(m, "    -------- ----------\n");
+		seq_printf(m, "    %-8s %10ld\n", "Splits", e->thp_splits);
+		seq_printf(m, "    %-8s %10ld\n\n", "Merges", e->thp_merges);
 
 		hydra_status_print_pt_counts(m, nr_online, online_nodes,
 					     e->nr_pgd, e->nr_p4d, e->nr_pud, e->nr_pmd, e->nr_pte,

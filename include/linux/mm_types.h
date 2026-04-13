@@ -1172,6 +1172,9 @@ struct mm_struct {
 	atomic_long_t hydra_repl_hugepmd_faults;	
 	atomic_long_t hydra_repl_hugepmd_copied;
 	
+	atomic_long_t hydra_thp_splits;
+	atomic_long_t hydra_thp_merges;
+	
 	atomic_long_t hydra_nr_pgd[NUMA_NODE_COUNT];
 	atomic_long_t hydra_nr_p4d[NUMA_NODE_COUNT];
 	atomic_long_t hydra_nr_pud[NUMA_NODE_COUNT];

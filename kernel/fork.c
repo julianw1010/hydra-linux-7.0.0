@@ -1107,6 +1107,8 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	atomic_long_set(&mm->hydra_repl_ptes_copied, 0);
 	atomic_long_set(&mm->hydra_repl_hugepmd_faults, 0);	
 	atomic_long_set(&mm->hydra_repl_hugepmd_copied, 0);
+	atomic_long_set(&mm->hydra_thp_splits, 0);
+	atomic_long_set(&mm->hydra_thp_merges, 0);
 	{
 		int n;
 		for (n = 0; n < NUMA_NODE_COUNT; n++) {
