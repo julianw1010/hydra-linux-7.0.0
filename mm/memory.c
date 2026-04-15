@@ -7061,7 +7061,7 @@ static int handle_pte_fault(struct vm_fault *vmf, int has_recursed)
 	    fault_node != vmf->vma->master_pgd_node) {
 		if (vmf->pte && pte_protnone(vmf->orig_pte)) {
 			pte_unmap(vmf->pte);
-			return __handle_mm_fault(vmf->vma, vmf->address, vmf->flags, 1);
+			return try_lazy_repl(vmf, fault_node);
 		}
 		if (!vmf->pte || !pte_present(vmf->orig_pte)) {
 			if (vmf->pte)
@@ -7250,17 +7250,44 @@ retry_pud:
 	}
 
 	if (pmd_trans_huge(vmf.orig_pmd)) {
-
 		if (on_replica) {
-			int master_ret;
+			bool needs_master;
 
-			hydra_exit_node_scope(&scope);
-			master_ret = __handle_mm_fault(vma, address, flags, 1);
-			if (master_ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
-					  VM_FAULT_RETRY | VM_FAULT_COMPLETED))
-				return master_ret;
-			return 0;
+			vmf.ptl = pmd_lock(mm, vmf.pmd);
+			vmf.orig_pmd = *vmf.pmd;
+
+			if (!pmd_trans_huge(vmf.orig_pmd)) {
+				spin_unlock(vmf.ptl);
+				ret = 0;
+				goto out_restore;
+			}
+
+			needs_master = false;
+			if (pmd_protnone(vmf.orig_pmd) && vma_is_accessible(vma))
+				needs_master = true;
+			if ((flags & (FAULT_FLAG_WRITE | FAULT_FLAG_UNSHARE)) &&
+			    !pmd_write(vmf.orig_pmd))
+				needs_master = true;
+
+			if (needs_master) {
+				int master_ret;
+
+				spin_unlock(vmf.ptl);
+				hydra_exit_node_scope(&scope);
+				master_ret = __handle_mm_fault(vma, address, flags, 1);
+				if (master_ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
+						  VM_FAULT_RETRY | VM_FAULT_COMPLETED))
+					return master_ret;
+				return 0;
+			}
+
+			if (!huge_pmd_set_accessed(&vmf))
+				fix_spurious_fault(&vmf, PGTABLE_LEVEL_PMD);
+			spin_unlock(vmf.ptl);
+			ret = 0;
+			goto out_restore;
 		}
+
 
 		if (pmd_protnone(vmf.orig_pmd) && vma_is_accessible(vma)) {
 			ret = do_huge_pmd_numa_page(&vmf);
