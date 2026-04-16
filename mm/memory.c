@@ -6625,6 +6625,9 @@ static int hydra_replicate_partial_pte(struct mm_struct *mm,
 
 	master_pte = pte_offset_kernel(master_pmd, addr);
 	master_pte_base = (pte_t *)((unsigned long)master_pte & PAGE_MASK);
+	
+	if (pmd_trans_huge(*master_pmd))
+    		return -EAGAIN;
 
 	repl_pgd = pgd_offset_node(mm, addr, current_node);
 	repl_p4d = repl_p4d_alloc(mm, repl_pgd, addr, current_node, master_node);
@@ -6828,12 +6831,25 @@ static int hydra_replicate_huge_pmd_range(struct mm_struct *mm,
 
 	for (i = start_idx; i < end_idx; i++) {
 		pmd_t master_val = master_pmd_base[i];
+		pmd_t repl_val = repl_pmd_base[i];
 
 		if (!pmd_present(master_val) || !pmd_trans_huge(master_val))
 			continue;
 
-		if (pmd_present(repl_pmd_base[i]))
+		if (pmd_present(repl_val) && pmd_trans_huge(repl_val))
 			continue;
+
+		if (pmd_present(repl_val) && !pmd_trans_huge(repl_val) && !pmd_bad(repl_val)) {
+			pte_t *pte_base = (pte_t *)pmd_page_vaddr(repl_val);
+			struct page *pte_page = virt_to_page(pte_base);
+			struct mm_struct *owner_mm = pte_page->pt_owner_mm;
+
+			native_set_pmd(&repl_pmd_base[i], __pmd(0));
+
+			if (owner_mm)
+				mm_dec_nr_ptes(owner_mm);
+			hydra_defer_pte_page_free(owner_mm, pte_page);
+		}
 
 		native_set_pmd(&repl_pmd_base[i], pmd_mkold(master_val));
 		copied++;
