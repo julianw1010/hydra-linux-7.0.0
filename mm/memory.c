@@ -643,7 +643,8 @@ int __repl_pte_alloc(struct mm_struct *mm, pmd_t *pmd, unsigned long address,
 			}
 		}
 
-		pmd_populate(mm, pmd, new);
+		paravirt_alloc_pte(mm, page_to_pfn(new));
+		native_set_pmd(pmd, __pmd(((pteval_t)page_to_pfn(new) << PAGE_SHIFT) | _PAGE_TABLE));
 		new = NULL;
 		allocated = 1;
 	}
@@ -6623,11 +6624,11 @@ static int hydra_replicate_partial_pte(struct mm_struct *mm,
 			return -EAGAIN;
 	}
 
+	if (pmd_trans_huge(*master_pmd))
+		return -EAGAIN;
+
 	master_pte = pte_offset_kernel(master_pmd, addr);
 	master_pte_base = (pte_t *)((unsigned long)master_pte & PAGE_MASK);
-	
-	if (pmd_trans_huge(*master_pmd))
-    		return -EAGAIN;
 
 	repl_pgd = pgd_offset_node(mm, addr, current_node);
 	repl_p4d = repl_p4d_alloc(mm, repl_pgd, addr, current_node, master_node);
@@ -7112,12 +7113,27 @@ static int handle_pte_fault(struct vm_fault *vmf, int has_recursed)
 			entry = pte_mkdirty(entry);
 	}
 	entry = pte_mkyoung(entry);
-	if (ptep_set_access_flags(vmf->vma, vmf->address, vmf->pte, entry,
-				vmf->flags & FAULT_FLAG_WRITE))
-		update_mmu_cache_range(vmf, vmf->vma, vmf->address,
-				vmf->pte, 1);
-	else
-		fix_spurious_fault(vmf, PGTABLE_LEVEL_PTE);
+	{
+		bool replica_side = vmf->vma->vm_mm->lazy_repl_enabled &&
+				    fault_node != vmf->vma->master_pgd_node;
+		int changed;
+
+		if (replica_side) {
+			changed = !pte_same(*vmf->pte, entry);
+			if (changed && (vmf->flags & FAULT_FLAG_WRITE))
+				native_set_pte(vmf->pte, entry);
+		} else {
+			changed = ptep_set_access_flags(vmf->vma, vmf->address,
+							vmf->pte, entry,
+							vmf->flags & FAULT_FLAG_WRITE);
+		}
+
+		if (changed)
+			update_mmu_cache_range(vmf, vmf->vma, vmf->address,
+					       vmf->pte, 1);
+		else
+			fix_spurious_fault(vmf, PGTABLE_LEVEL_PTE);
+	}
 unlock:
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	return 0;
