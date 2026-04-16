@@ -1207,6 +1207,19 @@ void pgtable_track_set_pmd(pmd_t *pmdp, pmd_t pmd)
 		if (pmd_present(old_repl) &&
 		    (pmd_trans_huge(old_repl) || pmd_leaf(old_repl))) {
 			native_set_pmd(replica_entry, __pmd(0));
+		} else if (pmd_present(old_repl) &&
+			   !pmd_trans_huge(old_repl) &&
+			   !pmd_leaf(old_repl) &&
+			   !pmd_bad(old_repl)) {
+			pte_t *pte_base = (pte_t *)pmd_page_vaddr(old_repl);
+			struct page *pte_page = virt_to_page(pte_base);
+			struct mm_struct *mm = pte_page->pt_owner_mm;
+
+			native_set_pmd(replica_entry, __pmd(0));
+
+			if (mm)
+				mm_dec_nr_ptes(mm);
+			hydra_defer_pte_page_free(mm, pte_page);
 		}
 	}
 }
