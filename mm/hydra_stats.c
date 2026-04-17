@@ -2155,15 +2155,15 @@ static int hydra_thp_check_show(struct seq_file *m, void *v)
 	seq_printf(m, "  THP matched:         %lu\n", total.thp_match);
 	seq_printf(m, "  THP not replicated:  %lu\n", total.thp_not_replicated);
 	seq_printf(m, "\n");
-	seq_printf(m, "  ERR stale_thp:       %-8lu  (master split, replica still THP)\n",
+	seq_printf(m, "  cnt_stale_thp:       %-8lu  (master split, replica still THP)\n",
 		   total.err_stale_thp);
-	seq_printf(m, "  ERR orphan_thp:      %-8lu  (no master, replica has THP)\n",
+	seq_printf(m, "  cnt_orphan_thp:      %-8lu  (no master, replica has THP)\n",
 		   total.err_orphan_thp);
-	seq_printf(m, "  ERR pfn_mismatch:    %-8lu  (both THP but different PFN)\n",
+	seq_printf(m, "  cnt_pfn_mismatch:    %-8lu  (both THP but different PFN)\n",
 		   total.err_pfn_mismatch);
-	seq_printf(m, "  ERR excess_write:    %-8lu  (replica writable, master not)\n",
+	seq_printf(m, "  cnt_excess_write:    %-8lu  (replica writable, master not)\n",
 		   total.err_excess_write);
-	seq_printf(m, "  ERR type_mismatch:   %-8lu  (master THP vs replica normal)\n",
+	seq_printf(m, "  cnt_type_mismatch:   %-8lu  (master THP vs replica normal)\n",
 		   total.err_type_mismatch);
 
 	if (total.err_stale_thp + total.err_orphan_thp + total.err_pfn_mismatch +
@@ -2593,15 +2593,15 @@ static int hydra_numa_check_show(struct seq_file *m, void *v)
 	seq_printf(m, "  PMD protnone (master):        %lu\n", total.pmd_protnone_master);
 	seq_printf(m, "  PMD protnone (replica):       %lu\n", total.pmd_protnone_replica);
 	seq_printf(m, "\n");
-	seq_printf(m, "  ERR protnone_stale:    %-6lu  (master cleared, replica still protnone)\n",
+	seq_printf(m, "  cnt_protnone_stale:    %-6lu  (master cleared, replica still protnone)\n",
 		   total.err_protnone_stale);
-	seq_printf(m, "  ERR protnone_missing:  %-6lu  (master protnone, replica not)\n",
+	seq_printf(m, "  cnt_protnone_missing:  %-6lu  (master protnone, replica not)\n",
 		   total.err_protnone_missing);
-	seq_printf(m, "  ERR protnone_loop:     %-6lu  (master resolved, replica stuck protnone)\n",
+	seq_printf(m, "  cnt_protnone_loop:     %-6lu  (master resolved, replica stuck protnone)\n",
 		   total.err_replica_protnone_loop);
-	seq_printf(m, "  ERR pfn_diverged:      %-6lu  (different physical page after migration)\n",
+	seq_printf(m, "  cnt_pfn_diverged:      %-6lu  (different physical page after migration)\n",
 		   total.err_pfn_diverged);
-	seq_printf(m, "  ERR write_excess:      %-6lu  (replica writable, master not)\n",
+	seq_printf(m, "  cnt_write_excess:      %-6lu  (replica writable, master not)\n",
 		   total.err_write_excess);
 
 	total_errors = total.err_protnone_stale +
