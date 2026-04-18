@@ -43,7 +43,10 @@ struct hydra_history_entry {
 	long hugepmd_copied;
 	long thp_splits;
 	long thp_merges;
-	long migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	long pte_migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	long pmd_migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	long fn_calls[14];
+	long fn_pages[14];
 	long nr_pgd[NUMA_NODE_COUNT], nr_p4d[NUMA_NODE_COUNT];
 	long nr_pud[NUMA_NODE_COUNT], nr_pmd[NUMA_NODE_COUNT], nr_pte[NUMA_NODE_COUNT];
 	long max_pgd[NUMA_NODE_COUNT], max_p4d[NUMA_NODE_COUNT];
@@ -94,9 +97,40 @@ void hydra_record_exit(struct mm_struct *mm, const char *comm, pid_t pid)
 		e->max_pte[n] = atomic_long_read(&mm->hydra_max_pte[n]);
 	}
 
+	e->fn_calls[0]  = atomic_long_read(&mm->hydra_fn_set_pte_calls);
+	e->fn_pages[0]  = atomic_long_read(&mm->hydra_fn_set_pte_pages);
+	e->fn_calls[1]  = atomic_long_read(&mm->hydra_fn_get_pte_calls);
+	e->fn_pages[1]  = atomic_long_read(&mm->hydra_fn_get_pte_pages);
+	e->fn_calls[2]  = atomic_long_read(&mm->hydra_fn_ptep_get_and_clear_calls);
+	e->fn_pages[2]  = atomic_long_read(&mm->hydra_fn_ptep_get_and_clear_pages);
+	e->fn_calls[3]  = atomic_long_read(&mm->hydra_fn_ptep_set_wrprotect_calls);
+	e->fn_pages[3]  = atomic_long_read(&mm->hydra_fn_ptep_set_wrprotect_pages);
+	e->fn_calls[4]  = atomic_long_read(&mm->hydra_fn_ptep_test_clear_young_calls);
+	e->fn_pages[4]  = atomic_long_read(&mm->hydra_fn_ptep_test_clear_young_pages);
+	e->fn_calls[5]  = atomic_long_read(&mm->hydra_fn_track_set_pmd_calls);
+	e->fn_pages[5]  = atomic_long_read(&mm->hydra_fn_track_set_pmd_pages);
+	e->fn_calls[6]  = atomic_long_read(&mm->hydra_fn_track_set_pud_calls);
+	e->fn_pages[6]  = atomic_long_read(&mm->hydra_fn_track_set_pud_pages);
+	e->fn_calls[7]  = atomic_long_read(&mm->hydra_fn_track_set_p4d_calls);
+	e->fn_pages[7]  = atomic_long_read(&mm->hydra_fn_track_set_p4d_pages);
+	e->fn_calls[8]  = atomic_long_read(&mm->hydra_fn_track_set_pgd_calls);
+	e->fn_pages[8]  = atomic_long_read(&mm->hydra_fn_track_set_pgd_pages);
+	e->fn_calls[9]  = atomic_long_read(&mm->hydra_fn_pmdp_huge_get_and_clear_calls);
+	e->fn_pages[9]  = atomic_long_read(&mm->hydra_fn_pmdp_huge_get_and_clear_pages);
+	e->fn_calls[10] = atomic_long_read(&mm->hydra_fn_pmdp_set_wrprotect_calls);
+	e->fn_pages[10] = atomic_long_read(&mm->hydra_fn_pmdp_set_wrprotect_pages);
+	e->fn_calls[11] = atomic_long_read(&mm->hydra_fn_pmdp_establish_calls);
+	e->fn_pages[11] = atomic_long_read(&mm->hydra_fn_pmdp_establish_pages);
+	e->fn_calls[12] = atomic_long_read(&mm->hydra_fn_get_pmd_calls);
+	e->fn_pages[12] = atomic_long_read(&mm->hydra_fn_get_pmd_pages);
+	e->fn_calls[13] = atomic_long_read(&mm->hydra_fn_pmdp_test_clear_young_calls);
+	e->fn_pages[13] = atomic_long_read(&mm->hydra_fn_pmdp_test_clear_young_pages);
+
 	for (src = 0; src < NUMA_NODE_COUNT; src++)
-		for (dst = 0; dst < NUMA_NODE_COUNT; dst++)
-			e->migration_matrix[src][dst] = atomic_long_read(&mm->hydra_migration_matrix[src][dst]);
+		for (dst = 0; dst < NUMA_NODE_COUNT; dst++) {
+			e->pte_migration_matrix[src][dst] = atomic_long_read(&mm->hydra_pte_migration_matrix[src][dst]);
+			e->pmd_migration_matrix[src][dst] = atomic_long_read(&mm->hydra_pmd_migration_matrix[src][dst]);
+		}
 
 	spin_lock_irqsave(&hydra_history_lock, flags);
 	list_add_tail(&e->list, &hydra_history_list);
@@ -481,40 +515,59 @@ static void hydra_status_print_migration(struct seq_file *m,
 					 struct mm_struct *mm,
 					 int nr_online, int *online_nodes)
 {
-	long matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
-	long matrix_total = 0;
+	long pte_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	long pmd_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	long pte_total = 0, pmd_total = 0;
 	int i, j;
 
 	for (i = 0; i < NUMA_NODE_COUNT; i++) {
 		for (j = 0; j < NUMA_NODE_COUNT; j++) {
-			matrix[i][j] = atomic_long_read(
-				&mm->hydra_migration_matrix[i][j]);
-			matrix_total += matrix[i][j];
+			pte_matrix[i][j] = atomic_long_read(&mm->hydra_pte_migration_matrix[i][j]);
+			pmd_matrix[i][j] = atomic_long_read(&mm->hydra_pmd_migration_matrix[i][j]);
+			pte_total += pte_matrix[i][j];
+			pmd_total += pmd_matrix[i][j];
 		}
 	}
 
-	if (matrix_total == 0)
-		return;
-
-	seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
-	seq_printf(m, "    %4s", "s\\d");
-	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " %10d", online_nodes[i]);
-	seq_printf(m, "\n");
-
-	seq_printf(m, "    ----");
-	for (i = 0; i < nr_online; i++)
-		seq_printf(m, " ----------");
-	seq_printf(m, "\n");
-
-	for (i = 0; i < nr_online; i++) {
-		int src = online_nodes[i];
-		seq_printf(m, "    %4d", src);
-		for (j = 0; j < nr_online; j++)
-			seq_printf(m, " %10ld", matrix[src][online_nodes[j]]);
+	if (pte_total > 0) {
+		seq_printf(m, "    PTE Migration Matrix (%ld migrations)\n", pte_total);
+		seq_printf(m, "    %4s", "s\\d");
+		for (i = 0; i < nr_online; i++)
+			seq_printf(m, " %10d", online_nodes[i]);
+		seq_printf(m, "\n");
+		seq_printf(m, "    ----");
+		for (i = 0; i < nr_online; i++)
+			seq_printf(m, " ----------");
+		seq_printf(m, "\n");
+		for (i = 0; i < nr_online; i++) {
+			int src = online_nodes[i];
+			seq_printf(m, "    %4d", src);
+			for (j = 0; j < nr_online; j++)
+				seq_printf(m, " %10ld", pte_matrix[src][online_nodes[j]]);
+			seq_printf(m, "\n");
+		}
 		seq_printf(m, "\n");
 	}
-	seq_printf(m, "\n");
+
+	if (pmd_total > 0) {
+		seq_printf(m, "    PMD Migration Matrix (%ld migrations)\n", pmd_total);
+		seq_printf(m, "    %4s", "s\\d");
+		for (i = 0; i < nr_online; i++)
+			seq_printf(m, " %10d", online_nodes[i]);
+		seq_printf(m, "\n");
+		seq_printf(m, "    ----");
+		for (i = 0; i < nr_online; i++)
+			seq_printf(m, " ----------");
+		seq_printf(m, "\n");
+		for (i = 0; i < nr_online; i++) {
+			int src = online_nodes[i];
+			seq_printf(m, "    %4d", src);
+			for (j = 0; j < nr_online; j++)
+				seq_printf(m, " %10ld", pmd_matrix[src][online_nodes[j]]);
+			seq_printf(m, "\n");
+		}
+		seq_printf(m, "\n");
+	}
 }
 
 static void hydra_status_print_mm_counters(struct seq_file *m,
@@ -526,6 +579,56 @@ static void hydra_status_print_mm_counters(struct seq_file *m,
 	seq_printf(m, "    %12s %12s\n", "Bytes", "KB");
 	seq_printf(m, "    ------------ ------------\n");
 	seq_printf(m, "    %12ld %12ld\n\n", pt_bytes, pt_bytes / 1024);
+}
+
+static void hydra_status_print_fn_stats(struct seq_file *m,
+					struct mm_struct *mm)
+{
+	struct {
+		const char *name;
+		atomic_long_t *calls;
+		atomic_long_t *pages;
+	} fns[] = {
+		{ "set_pte",              &mm->hydra_fn_set_pte_calls,              &mm->hydra_fn_set_pte_pages },
+		{ "get_pte",              &mm->hydra_fn_get_pte_calls,              &mm->hydra_fn_get_pte_pages },
+		{ "ptep_get_and_clear",   &mm->hydra_fn_ptep_get_and_clear_calls,   &mm->hydra_fn_ptep_get_and_clear_pages },
+		{ "ptep_set_wrprotect",   &mm->hydra_fn_ptep_set_wrprotect_calls,   &mm->hydra_fn_ptep_set_wrprotect_pages },
+		{ "ptep_test_clr_young",  &mm->hydra_fn_ptep_test_clear_young_calls,&mm->hydra_fn_ptep_test_clear_young_pages },
+		{ "track_set_pmd",        &mm->hydra_fn_track_set_pmd_calls,        &mm->hydra_fn_track_set_pmd_pages },
+		{ "track_set_pud",        &mm->hydra_fn_track_set_pud_calls,        &mm->hydra_fn_track_set_pud_pages },
+		{ "track_set_p4d",        &mm->hydra_fn_track_set_p4d_calls,        &mm->hydra_fn_track_set_p4d_pages },
+		{ "track_set_pgd",        &mm->hydra_fn_track_set_pgd_calls,        &mm->hydra_fn_track_set_pgd_pages },
+		{ "pmdp_huge_get_clr",    &mm->hydra_fn_pmdp_huge_get_and_clear_calls, &mm->hydra_fn_pmdp_huge_get_and_clear_pages },
+		{ "pmdp_set_wrprotect",   &mm->hydra_fn_pmdp_set_wrprotect_calls,   &mm->hydra_fn_pmdp_set_wrprotect_pages },
+		{ "pmdp_establish",       &mm->hydra_fn_pmdp_establish_calls,        &mm->hydra_fn_pmdp_establish_pages },
+		{ "get_pmd",              &mm->hydra_fn_get_pmd_calls,              &mm->hydra_fn_get_pmd_pages },
+		{ "pmdp_test_clr_young",  &mm->hydra_fn_pmdp_test_clear_young_calls,&mm->hydra_fn_pmdp_test_clear_young_pages },
+	};
+	int i;
+	long total_calls = 0, total_pages = 0;
+
+	seq_printf(m, "    Function Call Statistics\n");
+	seq_printf(m, "    %-24s %12s %12s %8s\n",
+		   "Function", "Calls", "Pages", "Avg");
+	seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
+
+	for (i = 0; i < ARRAY_SIZE(fns); i++) {
+		long c = atomic_long_read(fns[i].calls);
+		long p = atomic_long_read(fns[i].pages);
+		long avg = c > 0 ? p / c : 0;
+
+		total_calls += c;
+		total_pages += p;
+
+		if (c > 0)
+			seq_printf(m, "    %-24s %12ld %12ld %8ld\n",
+				   fns[i].name, c, p, avg);
+	}
+
+	seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
+	seq_printf(m, "    %-24s %12ld %12ld %8ld\n\n",
+		   "TOTAL", total_calls, total_pages,
+		   total_calls > 0 ? total_pages / total_calls : 0);
 }
 
 static void hydra_status_print_pt_counts(struct seq_file *m,
@@ -611,6 +714,7 @@ static int hydra_status_show(struct seq_file *m, void *v)
 		hydra_status_print_vma_dist(m, mm, nr_online, online_nodes);
 		hydra_status_print_migration(m, mm, nr_online, online_nodes);
 		hydra_status_print_mm_counters(m, mm);
+		hydra_status_print_fn_stats(m, mm);
 		{
 			long nr_pgd[NUMA_NODE_COUNT], nr_p4d[NUMA_NODE_COUNT];
 			long nr_pud[NUMA_NODE_COUNT], nr_pmd[NUMA_NODE_COUNT], nr_pte[NUMA_NODE_COUNT];
@@ -688,9 +792,39 @@ static ssize_t hydra_status_write(struct file *file, const char __user *buf,
 			atomic_long_set(&mm->hydra_repl_hugepmd_copied, 0);
 			atomic_long_set(&mm->hydra_thp_splits, 0);
 			atomic_long_set(&mm->hydra_thp_merges, 0);
+			atomic_long_set(&mm->hydra_fn_set_pte_calls, 0);
+			atomic_long_set(&mm->hydra_fn_set_pte_pages, 0);
+			atomic_long_set(&mm->hydra_fn_get_pte_calls, 0);
+			atomic_long_set(&mm->hydra_fn_get_pte_pages, 0);
+			atomic_long_set(&mm->hydra_fn_ptep_get_and_clear_calls, 0);
+			atomic_long_set(&mm->hydra_fn_ptep_get_and_clear_pages, 0);
+			atomic_long_set(&mm->hydra_fn_ptep_set_wrprotect_calls, 0);
+			atomic_long_set(&mm->hydra_fn_ptep_set_wrprotect_pages, 0);
+			atomic_long_set(&mm->hydra_fn_ptep_test_clear_young_calls, 0);
+			atomic_long_set(&mm->hydra_fn_ptep_test_clear_young_pages, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_pmd_calls, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_pmd_pages, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_pud_calls, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_pud_pages, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_p4d_calls, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_p4d_pages, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_pgd_calls, 0);
+			atomic_long_set(&mm->hydra_fn_track_set_pgd_pages, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_huge_get_and_clear_calls, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_huge_get_and_clear_pages, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_set_wrprotect_calls, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_set_wrprotect_pages, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_establish_calls, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_establish_pages, 0);
+			atomic_long_set(&mm->hydra_fn_get_pmd_calls, 0);
+			atomic_long_set(&mm->hydra_fn_get_pmd_pages, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_test_clear_young_calls, 0);
+			atomic_long_set(&mm->hydra_fn_pmdp_test_clear_young_pages, 0);
 			for (i = 0; i < NUMA_NODE_COUNT; i++)
-				for (j = 0; j < NUMA_NODE_COUNT; j++)
-					atomic_long_set(&mm->hydra_migration_matrix[i][j], 0);
+				for (j = 0; j < NUMA_NODE_COUNT; j++) {
+					atomic_long_set(&mm->hydra_pte_migration_matrix[i][j], 0);
+					atomic_long_set(&mm->hydra_pmd_migration_matrix[i][j], 0);
+				}
 		}
 		rcu_read_unlock();
 		pr_info("[HYDRA]: All counters reset for all processes\n");
@@ -1308,6 +1442,14 @@ static int hydra_history_show(struct seq_file *m, void *v)
 	struct hydra_history_entry *e;
 	int i, j, nr_online = 0;
 	int online_nodes[NUMA_NODE_COUNT];
+	static const char *fn_names[14] = {
+		"set_pte", "get_pte", "ptep_get_and_clear",
+		"ptep_set_wrprotect", "ptep_test_clr_young",
+		"track_set_pmd", "track_set_pud", "track_set_p4d",
+		"track_set_pgd", "pmdp_huge_get_clr",
+		"pmdp_set_wrprotect", "pmdp_establish",
+		"get_pmd", "pmdp_test_clr_young",
+	};
 
 	for (i = 0; i < NUMA_NODE_COUNT; i++) {
 		if (node_online(i))
@@ -1337,7 +1479,7 @@ static int hydra_history_show(struct seq_file *m, void *v)
 		u32 nsec = do_div(sec, 1000000000ULL);
 		long tlb_pct;
 		long avg_pte, avg_hpmd;
-		long matrix_total = 0;
+		long pte_total = 0, pmd_total = 0;
 
 		tlb_pct = (e->tlb_total > 0)
 			? (e->tlb_saved * 100) / e->tlb_total : 0;
@@ -1380,30 +1522,79 @@ static int hydra_history_show(struct seq_file *m, void *v)
 					     true);
 
 		for (i = 0; i < nr_online; i++)
-			for (j = 0; j < nr_online; j++)
-				matrix_total += e->migration_matrix[online_nodes[i]][online_nodes[j]];
+			for (j = 0; j < nr_online; j++) {
+				pte_total += e->pte_migration_matrix[online_nodes[i]][online_nodes[j]];
+				pmd_total += e->pmd_migration_matrix[online_nodes[i]][online_nodes[j]];
+			}
 
-		if (matrix_total > 0) {
-			seq_printf(m, "    Migration Matrix (%ld pages)\n", matrix_total);
+		if (pte_total > 0) {
+			seq_printf(m, "    PTE Migration Matrix (%ld migrations)\n", pte_total);
 			seq_printf(m, "    %4s", "s\\d");
 			for (i = 0; i < nr_online; i++)
 				seq_printf(m, " %10d", online_nodes[i]);
 			seq_printf(m, "\n");
-
 			seq_printf(m, "    ----");
 			for (i = 0; i < nr_online; i++)
 				seq_printf(m, " ----------");
 			seq_printf(m, "\n");
-
 			for (i = 0; i < nr_online; i++) {
 				int src = online_nodes[i];
 				seq_printf(m, "    %4d", src);
 				for (j = 0; j < nr_online; j++)
 					seq_printf(m, " %10ld",
-						   e->migration_matrix[src][online_nodes[j]]);
+						   e->pte_migration_matrix[src][online_nodes[j]]);
 				seq_printf(m, "\n");
 			}
 			seq_printf(m, "\n");
+		}
+
+		if (pmd_total > 0) {
+			seq_printf(m, "    PMD Migration Matrix (%ld migrations)\n", pmd_total);
+			seq_printf(m, "    %4s", "s\\d");
+			for (i = 0; i < nr_online; i++)
+				seq_printf(m, " %10d", online_nodes[i]);
+			seq_printf(m, "\n");
+			seq_printf(m, "    ----");
+			for (i = 0; i < nr_online; i++)
+				seq_printf(m, " ----------");
+			seq_printf(m, "\n");
+			for (i = 0; i < nr_online; i++) {
+				int src = online_nodes[i];
+				seq_printf(m, "    %4d", src);
+				for (j = 0; j < nr_online; j++)
+					seq_printf(m, " %10ld",
+						   e->pmd_migration_matrix[src][online_nodes[j]]);
+				seq_printf(m, "\n");
+			}
+			seq_printf(m, "\n");
+		}
+
+		{
+			long tc = 0, tp = 0;
+			int fi;
+
+			seq_printf(m, "    Function Call Statistics\n");
+			seq_printf(m, "    %-24s %12s %12s %8s\n",
+				   "Function", "Calls", "Pages", "Avg");
+			seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
+
+			for (fi = 0; fi < 14; fi++) {
+				long c = e->fn_calls[fi];
+				long p = e->fn_pages[fi];
+				long avg = c > 0 ? p / c : 0;
+
+				tc += c;
+				tp += p;
+
+				if (c > 0)
+					seq_printf(m, "    %-24s %12ld %12ld %8ld\n",
+						   fn_names[fi], c, p, avg);
+			}
+
+			seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
+			seq_printf(m, "    %-24s %12ld %12ld %8ld\n\n",
+				   "TOTAL", tc, tp,
+				   tc > 0 ? tp / tc : 0);
 		}
 	}
 

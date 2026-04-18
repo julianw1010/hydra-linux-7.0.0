@@ -6362,7 +6362,7 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		if (vma->vm_mm->lazy_repl_enabled &&
 		    orig_nid >= 0 && orig_nid < NUMA_NODE_COUNT &&
 		    target_nid >= 0 && target_nid < NUMA_NODE_COUNT)
-			atomic_long_inc(&vma->vm_mm->hydra_migration_matrix[orig_nid][target_nid]);
+			atomic_long_inc(&vma->vm_mm->hydra_pte_migration_matrix[orig_nid][target_nid]);
 		task_numa_fault(last_cpupid, nid, nr_pages, flags);
 		return 0;
 	}

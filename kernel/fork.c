@@ -1107,6 +1107,34 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	atomic_long_set(&mm->hydra_repl_ptes_copied, 0);
 	atomic_long_set(&mm->hydra_repl_hugepmd_faults, 0);	
 	atomic_long_set(&mm->hydra_repl_hugepmd_copied, 0);
+	atomic_long_set(&mm->hydra_fn_set_pte_calls, 0);
+	atomic_long_set(&mm->hydra_fn_set_pte_pages, 0);
+	atomic_long_set(&mm->hydra_fn_get_pte_calls, 0);
+	atomic_long_set(&mm->hydra_fn_get_pte_pages, 0);
+	atomic_long_set(&mm->hydra_fn_ptep_get_and_clear_calls, 0);
+	atomic_long_set(&mm->hydra_fn_ptep_get_and_clear_pages, 0);
+	atomic_long_set(&mm->hydra_fn_ptep_set_wrprotect_calls, 0);
+	atomic_long_set(&mm->hydra_fn_ptep_set_wrprotect_pages, 0);
+	atomic_long_set(&mm->hydra_fn_ptep_test_clear_young_calls, 0);
+	atomic_long_set(&mm->hydra_fn_ptep_test_clear_young_pages, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_pmd_calls, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_pmd_pages, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_pud_calls, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_pud_pages, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_p4d_calls, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_p4d_pages, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_pgd_calls, 0);
+	atomic_long_set(&mm->hydra_fn_track_set_pgd_pages, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_huge_get_and_clear_calls, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_huge_get_and_clear_pages, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_set_wrprotect_calls, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_set_wrprotect_pages, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_establish_calls, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_establish_pages, 0);
+	atomic_long_set(&mm->hydra_fn_get_pmd_calls, 0);
+	atomic_long_set(&mm->hydra_fn_get_pmd_pages, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_test_clear_young_calls, 0);
+	atomic_long_set(&mm->hydra_fn_pmdp_test_clear_young_pages, 0);
 	atomic_long_set(&mm->hydra_thp_splits, 0);
 	atomic_long_set(&mm->hydra_thp_merges, 0);
 	{
@@ -1127,8 +1155,10 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	{
 		int src, dst;
 		for (src = 0; src < NUMA_NODE_COUNT; src++)
-			for (dst = 0; dst < NUMA_NODE_COUNT; dst++)
-				atomic_long_set(&mm->hydra_migration_matrix[src][dst], 0);
+			for (dst = 0; dst < NUMA_NODE_COUNT; dst++) {
+				atomic_long_set(&mm->hydra_pte_migration_matrix[src][dst], 0);
+				atomic_long_set(&mm->hydra_pmd_migration_matrix[src][dst], 0);
+			}
 	}	
 	memset(&mm->rss_stat, 0, sizeof(mm->rss_stat));
 	spin_lock_init(&mm->page_table_lock);

@@ -1186,8 +1186,38 @@ struct mm_struct {
 	atomic_long_t hydra_max_pud[NUMA_NODE_COUNT];
 	atomic_long_t hydra_max_pmd[NUMA_NODE_COUNT];
 	atomic_long_t hydra_max_pte[NUMA_NODE_COUNT];
-	
-	atomic_long_t hydra_migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+
+	atomic_long_t hydra_fn_set_pte_calls;
+	atomic_long_t hydra_fn_set_pte_pages;
+	atomic_long_t hydra_fn_get_pte_calls;
+	atomic_long_t hydra_fn_get_pte_pages;
+	atomic_long_t hydra_fn_ptep_get_and_clear_calls;
+	atomic_long_t hydra_fn_ptep_get_and_clear_pages;
+	atomic_long_t hydra_fn_ptep_set_wrprotect_calls;
+	atomic_long_t hydra_fn_ptep_set_wrprotect_pages;
+	atomic_long_t hydra_fn_ptep_test_clear_young_calls;
+	atomic_long_t hydra_fn_ptep_test_clear_young_pages;
+	atomic_long_t hydra_fn_track_set_pmd_calls;
+	atomic_long_t hydra_fn_track_set_pmd_pages;
+	atomic_long_t hydra_fn_track_set_pud_calls;
+	atomic_long_t hydra_fn_track_set_pud_pages;
+	atomic_long_t hydra_fn_track_set_p4d_calls;
+	atomic_long_t hydra_fn_track_set_p4d_pages;
+	atomic_long_t hydra_fn_track_set_pgd_calls;
+	atomic_long_t hydra_fn_track_set_pgd_pages;
+	atomic_long_t hydra_fn_pmdp_huge_get_and_clear_calls;
+	atomic_long_t hydra_fn_pmdp_huge_get_and_clear_pages;
+	atomic_long_t hydra_fn_pmdp_set_wrprotect_calls;
+	atomic_long_t hydra_fn_pmdp_set_wrprotect_pages;
+	atomic_long_t hydra_fn_pmdp_establish_calls;
+	atomic_long_t hydra_fn_pmdp_establish_pages;
+	atomic_long_t hydra_fn_get_pmd_calls;
+	atomic_long_t hydra_fn_get_pmd_pages;
+	atomic_long_t hydra_fn_pmdp_test_clear_young_calls;
+	atomic_long_t hydra_fn_pmdp_test_clear_young_pages;
+
+	atomic_long_t hydra_pte_migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
+	atomic_long_t hydra_pmd_migration_matrix[NUMA_NODE_COUNT][NUMA_NODE_COUNT];
 	
 	pgd_t * repl_pgd[NUMA_NODE_COUNT];
 	
