@@ -589,28 +589,28 @@ static void hydra_status_print_fn_stats(struct seq_file *m,
 		atomic_long_t *calls;
 		atomic_long_t *pages;
 	} fns[] = {
-		{ "set_pte",              &mm->hydra_fn_set_pte_calls,              &mm->hydra_fn_set_pte_pages },
-		{ "get_pte",              &mm->hydra_fn_get_pte_calls,              &mm->hydra_fn_get_pte_pages },
-		{ "ptep_get_and_clear",   &mm->hydra_fn_ptep_get_and_clear_calls,   &mm->hydra_fn_ptep_get_and_clear_pages },
-		{ "ptep_set_wrprotect",   &mm->hydra_fn_ptep_set_wrprotect_calls,   &mm->hydra_fn_ptep_set_wrprotect_pages },
-		{ "ptep_test_clr_young",  &mm->hydra_fn_ptep_test_clear_young_calls,&mm->hydra_fn_ptep_test_clear_young_pages },
-		{ "track_set_pmd",        &mm->hydra_fn_track_set_pmd_calls,        &mm->hydra_fn_track_set_pmd_pages },
-		{ "track_set_pud",        &mm->hydra_fn_track_set_pud_calls,        &mm->hydra_fn_track_set_pud_pages },
-		{ "track_set_p4d",        &mm->hydra_fn_track_set_p4d_calls,        &mm->hydra_fn_track_set_p4d_pages },
-		{ "track_set_pgd",        &mm->hydra_fn_track_set_pgd_calls,        &mm->hydra_fn_track_set_pgd_pages },
-		{ "pmdp_huge_get_clr",    &mm->hydra_fn_pmdp_huge_get_and_clear_calls, &mm->hydra_fn_pmdp_huge_get_and_clear_pages },
-		{ "pmdp_set_wrprotect",   &mm->hydra_fn_pmdp_set_wrprotect_calls,   &mm->hydra_fn_pmdp_set_wrprotect_pages },
-		{ "pmdp_establish",       &mm->hydra_fn_pmdp_establish_calls,        &mm->hydra_fn_pmdp_establish_pages },
-		{ "get_pmd",              &mm->hydra_fn_get_pmd_calls,              &mm->hydra_fn_get_pmd_pages },
-		{ "pmdp_test_clr_young",  &mm->hydra_fn_pmdp_test_clear_young_calls,&mm->hydra_fn_pmdp_test_clear_young_pages },
+		{ "set_pte",                    &mm->hydra_fn_set_pte_calls,              &mm->hydra_fn_set_pte_pages },
+		{ "get_pte",                    &mm->hydra_fn_get_pte_calls,              &mm->hydra_fn_get_pte_pages },
+		{ "ptep_get_and_clear",         &mm->hydra_fn_ptep_get_and_clear_calls,   &mm->hydra_fn_ptep_get_and_clear_pages },
+		{ "ptep_set_wrprotect",         &mm->hydra_fn_ptep_set_wrprotect_calls,   &mm->hydra_fn_ptep_set_wrprotect_pages },
+		{ "ptep_test_and_clear_young",  &mm->hydra_fn_ptep_test_clear_young_calls,&mm->hydra_fn_ptep_test_clear_young_pages },
+		{ "track_set_pmd",              &mm->hydra_fn_track_set_pmd_calls,        &mm->hydra_fn_track_set_pmd_pages },
+		{ "track_set_pud",              &mm->hydra_fn_track_set_pud_calls,        &mm->hydra_fn_track_set_pud_pages },
+		{ "track_set_p4d",              &mm->hydra_fn_track_set_p4d_calls,        &mm->hydra_fn_track_set_p4d_pages },
+		{ "track_set_pgd",              &mm->hydra_fn_track_set_pgd_calls,        &mm->hydra_fn_track_set_pgd_pages },
+		{ "pmdp_huge_get_and_clear",    &mm->hydra_fn_pmdp_huge_get_and_clear_calls, &mm->hydra_fn_pmdp_huge_get_and_clear_pages },
+		{ "pmdp_set_wrprotect",         &mm->hydra_fn_pmdp_set_wrprotect_calls,   &mm->hydra_fn_pmdp_set_wrprotect_pages },
+		{ "pmdp_establish",             &mm->hydra_fn_pmdp_establish_calls,        &mm->hydra_fn_pmdp_establish_pages },
+		{ "get_pmd",                    &mm->hydra_fn_get_pmd_calls,              &mm->hydra_fn_get_pmd_pages },
+		{ "pmdp_test_and_clear_young",  &mm->hydra_fn_pmdp_test_clear_young_calls,&mm->hydra_fn_pmdp_test_clear_young_pages },
 	};
 	int i;
 	long total_calls = 0, total_pages = 0;
 
 	seq_printf(m, "    Function Call Statistics\n");
-	seq_printf(m, "    %-24s %12s %12s %8s\n",
+	seq_printf(m, "    %-28s %12s %12s %8s\n",
 		   "Function", "Calls", "Pages", "Avg");
-	seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
+	seq_printf(m, "    ---------------------------- ------------ ------------ --------\n");
 
 	for (i = 0; i < ARRAY_SIZE(fns); i++) {
 		long c = atomic_long_read(fns[i].calls);
@@ -621,12 +621,12 @@ static void hydra_status_print_fn_stats(struct seq_file *m,
 		total_pages += p;
 
 		if (c > 0)
-			seq_printf(m, "    %-24s %12ld %12ld %8ld\n",
+			seq_printf(m, "    %-28s %12ld %12ld %8ld\n",
 				   fns[i].name, c, p, avg);
 	}
 
-	seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
-	seq_printf(m, "    %-24s %12ld %12ld %8ld\n\n",
+	seq_printf(m, "    ---------------------------- ------------ ------------ --------\n");
+	seq_printf(m, "    %-28s %12ld %12ld %8ld\n\n",
 		   "TOTAL", total_calls, total_pages,
 		   total_calls > 0 ? total_pages / total_calls : 0);
 }
@@ -1444,11 +1444,11 @@ static int hydra_history_show(struct seq_file *m, void *v)
 	int online_nodes[NUMA_NODE_COUNT];
 	static const char *fn_names[14] = {
 		"set_pte", "get_pte", "ptep_get_and_clear",
-		"ptep_set_wrprotect", "ptep_test_clr_young",
+		"ptep_set_wrprotect", "ptep_test_and_clear_young",
 		"track_set_pmd", "track_set_pud", "track_set_p4d",
-		"track_set_pgd", "pmdp_huge_get_clr",
+		"track_set_pgd", "pmdp_huge_get_and_clear",
 		"pmdp_set_wrprotect", "pmdp_establish",
-		"get_pmd", "pmdp_test_clr_young",
+		"get_pmd", "pmdp_test_and_clear_young",
 	};
 
 	for (i = 0; i < NUMA_NODE_COUNT; i++) {
@@ -1569,14 +1569,14 @@ static int hydra_history_show(struct seq_file *m, void *v)
 			seq_printf(m, "\n");
 		}
 
-		{
+				{
 			long tc = 0, tp = 0;
 			int fi;
 
 			seq_printf(m, "    Function Call Statistics\n");
-			seq_printf(m, "    %-24s %12s %12s %8s\n",
+			seq_printf(m, "    %-28s %12s %12s %8s\n",
 				   "Function", "Calls", "Pages", "Avg");
-			seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
+			seq_printf(m, "    ---------------------------- ------------ ------------ --------\n");
 
 			for (fi = 0; fi < 14; fi++) {
 				long c = e->fn_calls[fi];
@@ -1587,12 +1587,12 @@ static int hydra_history_show(struct seq_file *m, void *v)
 				tp += p;
 
 				if (c > 0)
-					seq_printf(m, "    %-24s %12ld %12ld %8ld\n",
+					seq_printf(m, "    %-28s %12ld %12ld %8ld\n",
 						   fn_names[fi], c, p, avg);
 			}
 
-			seq_printf(m, "    ------------------------ ------------ ------------ --------\n");
-			seq_printf(m, "    %-24s %12ld %12ld %8ld\n\n",
+			seq_printf(m, "    ---------------------------- ------------ ------------ --------\n");
+			seq_printf(m, "    %-28s %12ld %12ld %8ld\n\n",
 				   "TOTAL", tc, tp,
 				   tc > 0 ? tp / tc : 0);
 		}
