@@ -1054,11 +1054,14 @@ pgd_t *repl_pgd_alloc(struct mm_struct *mm, size_t nid)
 	struct page *page;
 	int order = hydra_pgd_alloc_order();
 	nodemask_t nm = NODE_MASK_NONE;
+	bool from_cache = false;
 
 	if (order == 0) {
 		page = hydra_cache_pop(nid, HYDRA_CACHE_PGD);
-		if (page)
+		if (page) {
+			from_cache = true;
 			goto got_page;
+		}
 	}
 
 	node_set(nid, nm);
@@ -1089,9 +1092,9 @@ got_page:
 out_free_page:
 	hydra_pt_dec(&mm->hydra_nr_pgd[page_to_nid(page)]);
 	page->pt_owner_mm = NULL;
-	if (order == 0) {
-		page->next_replica = NULL;
+	if (order == 0 && from_cache) {
 		ClearPageHydraFromCache(page);
+		page->next_replica = NULL;
 		if (hydra_cache_push(page, nid, HYDRA_CACHE_PGD))
 			goto out;
 	}

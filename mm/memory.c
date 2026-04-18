@@ -620,9 +620,12 @@ int __repl_pte_alloc(struct mm_struct *mm, pmd_t *pmd, unsigned long address,
 	pgtable_t new = repl_pte_alloc_one(mm, address, nid, owner_node);
 	struct page *master_pte_page, *repl_pte_page, *next_repl;
 	int allocated = 0;
+	bool new_from_cache;
 
 	if (!new)
 		return -ENOMEM;
+
+	new_from_cache = PageHydraFromCache(new);
 
 	smp_wmb();
 
@@ -654,10 +657,13 @@ int __repl_pte_alloc(struct mm_struct *mm, pmd_t *pmd, unsigned long address,
 		pagetable_dtor(page_ptdesc(new));
 
 		new->next_replica = NULL;
-		ClearPageHydraFromCache(new);
-		if (!hydra_cache_push(new, nid, HYDRA_CACHE_PTE)) {
-			__free_page(new);
+		if (new_from_cache) {
+			ClearPageHydraFromCache(new);
+			if (hydra_cache_push(new, nid, HYDRA_CACHE_PTE))
+				return allocated;
 		}
+		ClearPageHydraFromCache(new);
+		__free_page(new);
 	}
 
 	return allocated;
@@ -7576,19 +7582,24 @@ int __repl_p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address, si
 {
 	p4d_t *new = repl_p4d_alloc_one(mm, address, nid, owner_node);
 	struct page *page;
+	bool from_cache;
 
 	if (!new)
 		return -ENOMEM;
+
+	page = virt_to_page(new);
+	from_cache = PageHydraFromCache(page);
 
 	smp_wmb();
 
 	spin_lock(&mm->page_table_lock);
 	if (pgd_present(*pgd)) {
-		page = virt_to_page(new);
-
-		page->next_replica = NULL;
-		ClearPageHydraFromCache(page);
-		if (!hydra_cache_push(page, nid, HYDRA_CACHE_P4D)) {
+		if (from_cache) {
+			ClearPageHydraFromCache(page);
+			page->next_replica = NULL;
+			if (!hydra_cache_push(page, nid, HYDRA_CACHE_P4D))
+				free_page((unsigned long)new);
+		} else {
 			free_page((unsigned long)new);
 		}
 	} else {
@@ -7627,9 +7638,13 @@ int __repl_pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address, si
 {
 	pud_t *new = repl_pud_alloc_one(mm, address, nid, owner_node);
 	struct page *page;
+	bool from_cache;
 
 	if (!new)
 		return -ENOMEM;
+
+	page = virt_to_page(new);
+	from_cache = PageHydraFromCache(page);
 
 	smp_wmb();
 
@@ -7639,11 +7654,12 @@ int __repl_pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address, si
 		mm_inc_nr_puds(mm);
 		p4d_populate(mm, p4d, new);
 	} else {
-		page = virt_to_page(new);
-
-		page->next_replica = NULL;
-		ClearPageHydraFromCache(page);
-		if (!hydra_cache_push(page, nid, HYDRA_CACHE_PUD)) {
+		if (from_cache) {
+			ClearPageHydraFromCache(page);
+			page->next_replica = NULL;
+			if (!hydra_cache_push(page, nid, HYDRA_CACHE_PUD))
+				free_page((unsigned long)new);
+		} else {
 			free_page((unsigned long)new);
 		}
 	}
@@ -7652,11 +7668,12 @@ int __repl_pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address, si
 		mm_inc_nr_puds(mm);
 		pgd_populate(mm, p4d, new);
 	} else {
-		page = virt_to_page(new);
-
-		page->next_replica = NULL;
-		ClearPageHydraFromCache(page);
-		if (!hydra_cache_push(page, nid, HYDRA_CACHE_PUD)) {
+		if (from_cache) {
+			ClearPageHydraFromCache(page);
+			page->next_replica = NULL;
+			if (!hydra_cache_push(page, nid, HYDRA_CACHE_PUD))
+				free_page((unsigned long)new);
+		} else {
 			free_page((unsigned long)new);
 		}
 	}
@@ -8473,12 +8490,14 @@ int __repl_pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address,
 	p4d_t *m_p4d;
 	pud_t *m_pud;
 	pmd_t *m_pmd;
+	bool from_cache;
 
 	new = repl_pmd_alloc_one(mm, address, nid, owner_node);
 	if (!new)
 		return -ENOMEM;
 
 	new_page = virt_to_page(new);
+	from_cache = PageHydraFromCache(new_page);
 	smp_wmb();
 
 	ptl = pud_lock(mm, pud);
@@ -8504,9 +8523,14 @@ int __repl_pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address,
 		struct ptdesc *ptdesc = virt_to_ptdesc(new);
 		pagetable_dtor(ptdesc);
 		new_page->next_replica = NULL;
-		ClearPageHydraFromCache(new_page);
-		if (!hydra_cache_push(new_page, nid, HYDRA_CACHE_PMD))
+		if (from_cache) {
+			ClearPageHydraFromCache(new_page);
+			if (!hydra_cache_push(new_page, nid, HYDRA_CACHE_PMD))
+				__free_page(new_page);
+		} else {
+			ClearPageHydraFromCache(new_page);
 			__free_page(new_page);
+		}
 	}
 	spin_unlock(ptl);
 	return 0;
