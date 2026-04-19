@@ -1103,6 +1103,10 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	atomic_long_set(&mm->hydra_tlb_shootdowns_sent, 0);
 	atomic_long_set(&mm->hydra_tlb_shootdowns_saved, 0);
 	atomic_long_set(&mm->hydra_tlb_shootdowns_total, 0);	
+	atomic_long_set(&mm->hydra_tlb_broadcast_count, 0);
+	atomic_long_set(&mm->hydra_tlb_ipi_count, 0);
+	atomic_long_set(&mm->hydra_tlb_local_only_count, 0);
+	atomic_long_set(&mm->hydra_tlb_broadcast_downgraded, 0);
 	atomic_long_set(&mm->hydra_repl_pte_faults, 0);
 	atomic_long_set(&mm->hydra_repl_ptes_copied, 0);
 	atomic_long_set(&mm->hydra_repl_hugepmd_faults, 0);	

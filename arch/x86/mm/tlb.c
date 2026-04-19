@@ -1455,18 +1455,23 @@ void flush_tlb_mm_node_range(struct mm_struct *mm,
 		    !mm_in_asid_transition(mm)) {
 			info->trim_cpumask = should_trim_cpumask(mm);
 			flush_tlb_multi(&flush_mask, info);
+			atomic_long_inc(&mm->hydra_tlb_broadcast_downgraded);
+			atomic_long_inc(&mm->hydra_tlb_ipi_count);
 		} else {
 			broadcast_tlb_flush(info);
+			atomic_long_inc(&mm->hydra_tlb_broadcast_count);
 		}
 	} else if (cpumask_any_but(&flush_mask, cpu) < nr_cpu_ids) {
 		info->trim_cpumask = should_trim_cpumask(mm);
 		flush_tlb_multi(&flush_mask, info);
 		consider_global_asid(mm);
+		atomic_long_inc(&mm->hydra_tlb_ipi_count);
 	} else if (mm == this_cpu_read(cpu_tlbstate.loaded_mm)) {
 		lockdep_assert_irqs_enabled();
 		local_irq_disable();
 		flush_tlb_func(info);
 		local_irq_enable();
+		atomic_long_inc(&mm->hydra_tlb_local_only_count);
 	}
 
 	hydra_drain_deferred_pages(mm);

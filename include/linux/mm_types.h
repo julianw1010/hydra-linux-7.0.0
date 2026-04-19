@@ -1167,6 +1167,11 @@ struct mm_struct {
 	atomic_long_t hydra_tlb_shootdowns_saved;
 	atomic_long_t hydra_tlb_shootdowns_total;	
 	
+	atomic_long_t hydra_tlb_broadcast_count;
+	atomic_long_t hydra_tlb_ipi_count;
+	atomic_long_t hydra_tlb_local_only_count;
+	atomic_long_t hydra_tlb_broadcast_downgraded;
+	
 	atomic_long_t hydra_repl_pte_faults;
 	atomic_long_t hydra_repl_ptes_copied;
 	atomic_long_t hydra_repl_hugepmd_faults;	

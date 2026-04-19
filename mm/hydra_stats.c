@@ -37,6 +37,10 @@ struct hydra_history_entry {
 	long tlb_total;
 	long tlb_sent;
 	long tlb_saved;
+	long tlb_broadcast;
+	long tlb_ipi;
+	long tlb_local_only;
+	long tlb_broadcast_downgraded;
 	long pte_faults;
 	long ptes_copied;
 	long hugepmd_faults;
@@ -77,6 +81,10 @@ void hydra_record_exit(struct mm_struct *mm, const char *comm, pid_t pid)
 	e->tlb_total = atomic_long_read(&mm->hydra_tlb_shootdowns_total);
 	e->tlb_sent = atomic_long_read(&mm->hydra_tlb_shootdowns_sent);
 	e->tlb_saved = atomic_long_read(&mm->hydra_tlb_shootdowns_saved);
+	e->tlb_broadcast = atomic_long_read(&mm->hydra_tlb_broadcast_count);
+	e->tlb_ipi = atomic_long_read(&mm->hydra_tlb_ipi_count);
+	e->tlb_local_only = atomic_long_read(&mm->hydra_tlb_local_only_count);
+	e->tlb_broadcast_downgraded = atomic_long_read(&mm->hydra_tlb_broadcast_downgraded);
 	e->pte_faults = atomic_long_read(&mm->hydra_repl_pte_faults);
 	e->ptes_copied = atomic_long_read(&mm->hydra_repl_ptes_copied);
 	e->hugepmd_faults = atomic_long_read(&mm->hydra_repl_hugepmd_faults);
@@ -421,6 +429,10 @@ static void hydra_status_print_tlb_table(struct seq_file *m,
 	long tlb_sent = atomic_long_read(&mm->hydra_tlb_shootdowns_sent);
 	long tlb_saved = atomic_long_read(&mm->hydra_tlb_shootdowns_saved);
 	long pct = (tlb_total > 0) ? (tlb_saved * 100) / tlb_total : 0;
+	long bcast = atomic_long_read(&mm->hydra_tlb_broadcast_count);
+	long ipi = atomic_long_read(&mm->hydra_tlb_ipi_count);
+	long local = atomic_long_read(&mm->hydra_tlb_local_only_count);
+	long downgraded = atomic_long_read(&mm->hydra_tlb_broadcast_downgraded);
 
 	seq_printf(m, "    TLB Shootdowns\n");
 	seq_printf(m, "    %10s %10s %10s %8s\n",
@@ -428,6 +440,14 @@ static void hydra_status_print_tlb_table(struct seq_file *m,
 	seq_printf(m, "    ---------- ---------- ---------- --------\n");
 	seq_printf(m, "    %10ld %10ld %10ld %6ld%%\n\n",
 		   tlb_total, tlb_sent, tlb_saved, pct);
+
+	seq_printf(m, "    TLB Flush Methods\n");
+	seq_printf(m, "    %-20s %12s\n", "Method", "Count");
+	seq_printf(m, "    -------------------- ------------\n");
+	seq_printf(m, "    %-20s %12ld\n", "INVLPGB (broadcast)", bcast);
+	seq_printf(m, "    %-20s %12ld\n", "IPI (flush_tlb_multi)", ipi);
+	seq_printf(m, "    %-20s %12ld\n", "Local only", local);
+	seq_printf(m, "    %-20s %12ld\n\n", "Broadcast downgraded", downgraded);
 }
 
 static void hydra_status_print_repl_table(struct seq_file *m,
@@ -786,6 +806,10 @@ static ssize_t hydra_status_write(struct file *file, const char __user *buf,
 			atomic_long_set(&mm->hydra_tlb_shootdowns_total, 0);
 			atomic_long_set(&mm->hydra_tlb_shootdowns_sent, 0);
 			atomic_long_set(&mm->hydra_tlb_shootdowns_saved, 0);
+			atomic_long_set(&mm->hydra_tlb_broadcast_count, 0);
+			atomic_long_set(&mm->hydra_tlb_ipi_count, 0);
+			atomic_long_set(&mm->hydra_tlb_local_only_count, 0);
+			atomic_long_set(&mm->hydra_tlb_broadcast_downgraded, 0);
 			atomic_long_set(&mm->hydra_repl_pte_faults, 0);
 			atomic_long_set(&mm->hydra_repl_ptes_copied, 0);
 			atomic_long_set(&mm->hydra_repl_hugepmd_faults, 0);
@@ -1499,6 +1523,14 @@ static int hydra_history_show(struct seq_file *m, void *v)
 		seq_printf(m, "    ---------- ---------- ---------- --------\n");
 		seq_printf(m, "    %10ld %10ld %10ld %6ld%%\n\n",
 			   e->tlb_total, e->tlb_sent, e->tlb_saved, tlb_pct);
+
+		seq_printf(m, "    TLB Flush Methods\n");
+		seq_printf(m, "    %-20s %12s\n", "Method", "Count");
+		seq_printf(m, "    -------------------- ------------\n");
+		seq_printf(m, "    %-20s %12ld\n", "INVLPGB (broadcast)", e->tlb_broadcast);
+		seq_printf(m, "    %-20s %12ld\n", "IPI (flush_tlb_multi)", e->tlb_ipi);
+		seq_printf(m, "    %-20s %12ld\n", "Local only", e->tlb_local_only);
+		seq_printf(m, "    %-20s %12ld\n\n", "Broadcast downgraded", e->tlb_broadcast_downgraded);
 
 		seq_printf(m, "    Replication Faults\n");
 		seq_printf(m, "    %-8s %10s %10s %10s\n",
