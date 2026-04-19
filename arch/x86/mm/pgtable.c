@@ -599,6 +599,8 @@ int ptep_test_and_clear_young(struct vm_area_struct *vma,
 		touched++;
 	}
 
+	smp_wmb();
+
 	if (mm) {
 		atomic_long_inc(&mm->hydra_fn_ptep_test_clear_young_calls);
 		atomic_long_add(touched, &mm->hydra_fn_ptep_test_clear_young_pages);
@@ -654,6 +656,8 @@ int pmdp_test_and_clear_young(struct vm_area_struct *vma,
 		}
 		touched++;
 	}
+
+	smp_wmb();
 
 	if (mm) {
 		atomic_long_inc(&mm->hydra_fn_pmdp_test_clear_young_calls);
@@ -1249,6 +1253,7 @@ void pgtable_track_set_pmd(pmd_t *pmdp, pmd_t pmd)
 			atomic_long_inc(&mm->hydra_fn_track_set_pmd_calls);
 			atomic_long_add(touched, &mm->hydra_fn_track_set_pmd_pages);
 		}
+		smp_wmb();
 		return;
 	}
 
@@ -1280,6 +1285,7 @@ void pgtable_track_set_pmd(pmd_t *pmdp, pmd_t pmd)
 			atomic_long_inc(&mm->hydra_fn_track_set_pmd_calls);
 			atomic_long_add(touched, &mm->hydra_fn_track_set_pmd_pages);
 		}
+		smp_wmb();
 		return;
 	}
 
@@ -1311,6 +1317,8 @@ void pgtable_track_set_pmd(pmd_t *pmdp, pmd_t pmd)
 		atomic_long_inc(&mm->hydra_fn_track_set_pmd_calls);
 		atomic_long_add(touched, &mm->hydra_fn_track_set_pmd_pages);
 	}
+
+	smp_wmb();
 }
 
 void pgtable_repl_set_pte(pte_t *ptep, pte_t pteval)
@@ -1352,6 +1360,8 @@ void pgtable_repl_set_pte(pte_t *ptep, pte_t pteval)
 			touched++;
 		}
 	}
+
+	smp_wmb();
 
 	if (mm) {
 		atomic_long_inc(&mm->hydra_fn_set_pte_calls);
@@ -1458,6 +1468,8 @@ pte_t ptep_get_and_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 		touched++;
 	}
 
+	smp_wmb();
+
 	atomic_long_inc(&mm->hydra_fn_ptep_get_and_clear_calls);
 	atomic_long_add(touched, &mm->hydra_fn_ptep_get_and_clear_pages);
 
@@ -1498,6 +1510,8 @@ void ptep_set_wrprotect(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 			clear_bit(_PAGE_BIT_RW, (unsigned long *)&rp->pte);
 		touched++;
 	}
+
+	smp_wmb();
 
 	atomic_long_inc(&mm->hydra_fn_ptep_set_wrprotect_calls);
 	atomic_long_add(touched, &mm->hydra_fn_ptep_set_wrprotect_pages);
@@ -1559,6 +1573,8 @@ pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm, unsigned long addr,
 		touched++;
 	}
 
+	smp_wmb();
+
 	if (mm) {
 		atomic_long_inc(&mm->hydra_fn_pmdp_huge_get_and_clear_calls);
 		atomic_long_add(touched, &mm->hydra_fn_pmdp_huge_get_and_clear_pages);
@@ -1605,6 +1621,8 @@ void pmdp_set_wrprotect(struct mm_struct *mm,
 			clear_bit(_PAGE_BIT_RW, (unsigned long *)replica_entry);
 		touched++;
 	}
+
+	smp_wmb();
 
 	if (mm) {
 		atomic_long_inc(&mm->hydra_fn_pmdp_set_wrprotect_calls);
@@ -1670,6 +1688,8 @@ pmd_t hydra_pmdp_establish(pmd_t *pmdp, pmd_t pmd)
 			atomic_long_add(touched, &mm->hydra_fn_pmdp_establish_pages);
 		}
 
+		smp_wmb();
+
 		return __pmd(val);
 	}
 
@@ -1707,6 +1727,8 @@ pmd_t hydra_pmdp_establish(pmd_t *pmdp, pmd_t pmd)
 		}
 		touched++;
 	}
+
+	smp_wmb();
 
 	if (mm) {
 		atomic_long_inc(&mm->hydra_fn_pmdp_establish_calls);
