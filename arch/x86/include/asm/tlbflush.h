@@ -20,6 +20,8 @@ DECLARE_PER_CPU(u64, tlbstate_untag_mask);
 
 void __flush_tlb_all(void);
 
+void load_new_mm_cr3(pgd_t *pgdir, u16 new_asid, unsigned long lam, bool need_flush);
+
 #define TLB_FLUSH_ALL	-1UL
 #define TLB_GENERATION_INVALID	0
 
@@ -93,6 +95,7 @@ struct tlb_state {
 	};
 
 	u16 loaded_mm_asid;
+	int loaded_mm_node;
 	u16 next_asid;
 
 	/*

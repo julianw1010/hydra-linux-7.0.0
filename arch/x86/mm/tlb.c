@@ -566,7 +566,7 @@ static inline void invalidate_user_asid(u16 asid)
 		  (unsigned long *)this_cpu_ptr(&cpu_tlbstate.user_pcid_flush_mask));
 }
 
-static void load_new_mm_cr3(pgd_t *pgdir, u16 new_asid, unsigned long lam,
+void load_new_mm_cr3(pgd_t *pgdir, u16 new_asid, unsigned long lam,
 			    bool need_flush)
 {
 	unsigned long new_mm_cr3;
@@ -818,17 +818,50 @@ void switch_mm_irqs_off(struct mm_struct *unused, struct mm_struct *next,
 			goto reload_tlb;
 		}
 
-		if (is_global_asid(prev_asid))
+		if (is_global_asid(prev_asid)) {
+			if (next->lazy_repl_enabled) {
+				int prev_node = this_cpu_read(cpu_tlbstate.loaded_mm_node);
+				int cur_node = numa_node_id();
+				if (prev_node != cur_node) {
+					next_pgd = next->repl_pgd[cur_node];
+					this_cpu_write(cpu_tlbstate.loaded_mm_node, cur_node);
+					load_new_mm_cr3(next_pgd, prev_asid,
+							tlbstate_lam_cr3_mask(), true);
+				}
+			}
 			return;
+		}
 
-		if (!was_lazy)
+		if (!was_lazy) {
+			if (next->lazy_repl_enabled) {
+				int prev_node = this_cpu_read(cpu_tlbstate.loaded_mm_node);
+				int cur_node = numa_node_id();
+				if (prev_node != cur_node) {
+					next_pgd = next->repl_pgd[cur_node];
+					this_cpu_write(cpu_tlbstate.loaded_mm_node, cur_node);
+					load_new_mm_cr3(next_pgd, prev_asid,
+							tlbstate_lam_cr3_mask(), true);
+				}
+			}
 			return;
+		}
 
 		smp_mb();
 		next_tlb_gen = atomic64_read(&next->context.tlb_gen);
 		if (this_cpu_read(cpu_tlbstate.ctxs[prev_asid].tlb_gen) ==
-				next_tlb_gen)
+				next_tlb_gen) {
+			if (next->lazy_repl_enabled) {
+				int prev_node = this_cpu_read(cpu_tlbstate.loaded_mm_node);
+				int cur_node = numa_node_id();
+				if (prev_node != cur_node) {
+					next_pgd = next->repl_pgd[cur_node];
+					this_cpu_write(cpu_tlbstate.loaded_mm_node, cur_node);
+					load_new_mm_cr3(next_pgd, prev_asid,
+							tlbstate_lam_cr3_mask(), true);
+				}
+			}
 			return;
+		}
 
 		ns.asid = prev_asid;
 		ns.need_flush = true;
@@ -851,10 +884,16 @@ reload_tlb:
 	new_lam = mm_lam_cr3_mask(next);
 
 	if (next->lazy_repl_enabled) {
+		int prev_node = this_cpu_read(cpu_tlbstate.loaded_mm_node);
+		int cur_node = numa_node_id();
 		smp_rmb();
-		next_pgd = next->repl_pgd[numa_node_id()];
+		next_pgd = next->repl_pgd[cur_node];
+		this_cpu_write(cpu_tlbstate.loaded_mm_node, cur_node);
+		if (prev_node != cur_node)
+			ns.need_flush = true;
 	} else {
 		next_pgd = next->pgd;
+		this_cpu_write(cpu_tlbstate.loaded_mm_node, numa_node_id());
 	}
 
 	if (ns.need_flush) {
@@ -1016,6 +1055,7 @@ void initialize_tlbstate_and_flush(void)
 	/* Reinitialize tlbstate. */
 	this_cpu_write(cpu_tlbstate.last_user_mm_spec, LAST_USER_MM_INIT);
 	this_cpu_write(cpu_tlbstate.loaded_mm_asid, 0);
+	this_cpu_write(cpu_tlbstate.loaded_mm_node, numa_node_id());
 	this_cpu_write(cpu_tlbstate.next_asid, 1);
 	this_cpu_write(cpu_tlbstate.ctxs[0].ctx_id, mm->context.ctx_id);
 	this_cpu_write(cpu_tlbstate.ctxs[0].tlb_gen, tlb_gen);

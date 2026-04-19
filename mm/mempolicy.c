@@ -4233,8 +4233,10 @@ void hydra_reload_cr3(void *info)
 	struct mm_struct *mm = info;
 	if (this_cpu_read(cpu_tlbstate.loaded_mm) == mm) {
 		int node = numa_node_id();
-		unsigned long new_cr3 = __pa(mm->repl_pgd[node]);
-		write_cr3(new_cr3);
+		u16 asid = this_cpu_read(cpu_tlbstate.loaded_mm_asid);
+		unsigned long lam = tlbstate_lam_cr3_mask();
+		this_cpu_write(cpu_tlbstate.loaded_mm_node, node);
+		load_new_mm_cr3(mm->repl_pgd[node], asid, lam, true);
 	}
 }
 
