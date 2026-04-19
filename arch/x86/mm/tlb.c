@@ -1446,17 +1446,22 @@ void flush_tlb_mm_node_range(struct mm_struct *mm,
 	atomic_long_add(total_remote, &mm->hydra_tlb_shootdowns_total);
 	atomic_long_add(sent_remote, &mm->hydra_tlb_shootdowns_sent);
 	atomic_long_add(total_remote - sent_remote, &mm->hydra_tlb_shootdowns_saved);
-	
+
 	if (mm->lazy_repl_enabled)
 		smp_mb();
 
 	if (mm_global_asid(mm)) {
-		broadcast_tlb_flush(info);
+		if (mm->lazy_repl_enabled && sent_remote < total_remote &&
+		    !mm_in_asid_transition(mm)) {
+			info->trim_cpumask = should_trim_cpumask(mm);
+			flush_tlb_multi(&flush_mask, info);
+		} else {
+			broadcast_tlb_flush(info);
+		}
 	} else if (cpumask_any_but(&flush_mask, cpu) < nr_cpu_ids) {
 		info->trim_cpumask = should_trim_cpumask(mm);
 		flush_tlb_multi(&flush_mask, info);
-		if (!mm->lazy_repl_enabled)
-			consider_global_asid(mm);
+		consider_global_asid(mm);
 	} else if (mm == this_cpu_read(cpu_tlbstate.loaded_mm)) {
 		lockdep_assert_irqs_enabled();
 		local_irq_disable();
